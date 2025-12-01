@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "author": "Anonymous maker",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-s3-devkitc-1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "board-ssd1306",
+      "id": "oled1",
+      "top": -140,
+      "left": 100,
+      "attrs": { "i2cAddress": "0x3c" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnUp",
+      "top": -60,
+      "left": 280,
+      "attrs": { "color": "white", "label": "UP" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnDown",
+      "top": 40,
+      "left": 280,
+      "attrs": { "color": "white", "label": "DOWN" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnLeft",
+      "top": -10,
+      "left": 230,
+      "attrs": { "color": "white", "label": "LEFT" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnRight",
+      "top": -10,
+      "left": 330,
+      "attrs": { "color": "white", "label": "RIGHT" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnA",
+      "top": -10,
+      "left": 420,
+      "attrs": { "color": "green", "label": "A" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnB",
+      "top": -10,
+      "left": 480,
+      "attrs": { "color": "red", "label": "B" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz1",
+      "top": 120,
+      "left": 200,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz2",
+      "top": 120,
+      "left": 280,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-neopixel",
+      "id": "rgb1",
+      "top": 120,
+      "left": 360,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "oled1:GND", "esp:GND.1", "black", [ "h0" ] ],
+    [ "oled1:VCC", "esp:3V3", "red", [ "h0" ] ],
+    [ "oled1:SCL", "esp:42", "green", [ "h0" ] ],
+    [ "oled1:SDA", "esp:41", "blue", [ "h0" ] ],
+    [ "btnUp:1.l", "esp:38", "purple", [ "h0" ] ],
+    [ "btnUp:2.l", "esp:GND.2", "black", [ "h0" ] ],
+    [ "btnDown:1.l", "esp:35", "purple", [ "h0" ] ],
+    [ "btnDown:2.l", "esp:GND.2", "black", [ "h0" ] ],
+    [ "btnLeft:1.l", "esp:36", "purple", [ "h0" ] ],
+    [ "btnLeft:2.l", "esp:GND.2", "black", [ "h0" ] ],
+    [ "btnRight:1.l", "esp:37", "purple", [ "h0" ] ],
+    [ "btnRight:2.l", "esp:GND.2", "black", [ "h0" ] ],
+    [ "btnA:1.l", "esp:19", "green", [ "h0" ] ],
+    [ "btnA:2.l", "esp:GND.2", "black", [ "h0" ] ],
+    [ "btnB:1.l", "esp:20", "red", [ "h0" ] ],
+    [ "btnB:2.l", "esp:GND.2", "black", [ "h0" ] ],
+    [ "bz1:1", "esp:5", "orange", [ "h0" ] ],
+    [ "bz1:2", "esp:GND.3", "black", [ "h0" ] ],
+    [ "bz2:1", "esp:40", "orange", [ "h0" ] ],
+    [ "bz2:2", "esp:GND.3", "black", [ "h0" ] ],
+    [ "rgb1:VDD", "esp:3V3", "red", [ "h0" ] ],
+    [ "rgb1:VSS", "esp:GND.3", "black", [ "h0" ] ],
+    [ "rgb1:DIN", "esp:1", "yellow", [ "h0" ] ]
+  ]
+}
