@@ -1,11 +1,15 @@
 #ifndef TG_SAVE_H
 #define TG_SAVE_H
 
-#include <Arduino.h>
-#include <LittleFS.h>
+#include "../shared/platform.h"
 #include "terrain.h"
 #include "inventory.h"
 #include "building.h"
+
+// Only include LittleFS on ESP32 platform
+#ifdef ARDUINO
+#include <LittleFS.h>
+#endif
 
 #define SAVE_SLOT_COUNT 6
 #define SAVE_NAME_MAX 12
@@ -67,6 +71,7 @@ const char* getSlotFilename(uint8_t slot, char* buffer) {
 
 // Initialize save system (call in setup())
 bool initSaveSystem() {
+#ifdef ARDUINO
     if (!LittleFS.begin(true)) {  // true = format if mount fails
         return false;
     }
@@ -87,7 +92,7 @@ bool initSaveSystem() {
             }
         }
     }
-
+#endif
     return true;
 }
 
@@ -95,6 +100,7 @@ bool initSaveSystem() {
 bool readSaveHeader(uint8_t slot, SaveHeader* header) {
     if (slot >= SAVE_SLOT_COUNT) return false;
 
+#ifdef ARDUINO
     char filename[24];
     getSlotFilename(slot, filename);
 
@@ -114,6 +120,11 @@ bool readSaveHeader(uint8_t slot, SaveHeader* header) {
     file.close();
 
     return bytesRead == sizeof(SaveHeader);
+#else
+    header->valid = 0x00;
+    header->name[0] = '\0';
+    return true;
+#endif
 }
 
 // Load all save headers (for slot browser)
@@ -152,11 +163,13 @@ int8_t getMostRecentSave() {
 bool setMostRecentSave(uint8_t slot) {
     if (slot >= SAVE_SLOT_COUNT) return false;
 
+#ifdef ARDUINO
     File f = LittleFS.open("/saves/last.idx", "w");
     if (!f) return false;
 
     f.write(slot);
     f.close();
+#endif
     mostRecentSlot = slot;
     return true;
 }
@@ -230,11 +243,12 @@ bool saveGame(uint8_t slot, const char* name, bool inBuilding) {
     save.header.valid = 0x01;
     strncpy(save.header.name, name, SAVE_NAME_MAX);
     save.header.name[SAVE_NAME_MAX] = '\0';
-    save.header.timestamp = millis();
+    save.header.timestamp = platform_millis();
 
     // Pack game state
     packGameState(&save.data, inBuilding);
 
+#ifdef ARDUINO
     // Write to file
     char filename[24];
     getSlotFilename(slot, filename);
@@ -246,6 +260,7 @@ bool saveGame(uint8_t slot, const char* name, bool inBuilding) {
     file.close();
 
     if (written != sizeof(SaveSlot)) return false;
+#endif
 
     // Update cached header
     memcpy(&saveHeaders[slot], &save.header, sizeof(SaveHeader));
@@ -260,6 +275,7 @@ bool saveGame(uint8_t slot, const char* name, bool inBuilding) {
 int8_t loadGame(uint8_t slot) {
     if (slot >= SAVE_SLOT_COUNT) return -1;
 
+#ifdef ARDUINO
     char filename[24];
     getSlotFilename(slot, filename);
 
@@ -283,18 +299,23 @@ int8_t loadGame(uint8_t slot) {
     setMostRecentSave(slot);
 
     return save.data.wasInBuilding;
+#else
+    return -1;  // Save not supported on web
+#endif
 }
 
 // Delete a save slot
 bool deleteSave(uint8_t slot) {
     if (slot >= SAVE_SLOT_COUNT) return false;
 
+#ifdef ARDUINO
     char filename[24];
     getSlotFilename(slot, filename);
 
     if (LittleFS.exists(filename)) {
         LittleFS.remove(filename);
     }
+#endif
 
     // Clear cached header
     saveHeaders[slot].valid = 0x00;
@@ -303,7 +324,9 @@ bool deleteSave(uint8_t slot) {
     // Update most recent if deleted
     if (mostRecentSlot == slot) {
         mostRecentSlot = -1;
+#ifdef ARDUINO
         LittleFS.remove("/saves/last.idx");
+#endif
     }
 
     return true;

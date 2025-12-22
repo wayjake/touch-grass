@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build firmware (outputs to build/)
-arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir build TouchGrass.ino
+arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir build touch-grass.ino
 
 # Watch for changes and auto-rebuild
 ./watch.sh
@@ -26,11 +26,13 @@ TouchGrass is a tile-based exploration game for ESP32-S3 with SH1106 OLED displa
 
 ### File Structure
 
-- `TouchGrass.ino` - Main game loop, state machine (STATE_WORLD, STATE_TILE_VIEW), input handling
-- `shared/config.h` - Hardware pin definitions and display constants
-- `shared/hardware.h` - Hardware abstraction: buttons (6-button d-pad + A/B), dual buzzers, RGB LED, display init
-- `shared/graphics.h` - Sprite rendering utilities (drawTile, drawXbm)
-- `shared/sound.h` - Audio: blocking melodies, non-blocking background music, beeps
+- `touch-grass.ino` - Main game loop, state machine (STATE_WORLD, STATE_TILE_VIEW), input handling
+- `shared/platform.h` - Platform abstraction API (display, input, sound, timing)
+- `shared/platform_esp32.h` - ESP32 implementation of platform API
+- `shared/config.h` - Hardware pin definitions and display constants (legacy)
+- `shared/hardware.h` - Hardware abstraction (legacy, wrapped by platform_esp32.h)
+- `shared/graphics.h` - Sprite rendering utilities (legacy, wrapped by platform_esp32.h)
+- `shared/sound.h` - Audio utilities (legacy, wrapped by platform_esp32.h)
 - `touch_grass/terrain.h` - Map generation (procedural rivers, dirt patches), player movement, tile state
 - `touch_grass/sprites.h` - 8x8 tile sprites (TILE_GRASS, TILE_WATER, TILE_DIRT, TILE_CHAR) and tile type constants
 
@@ -52,10 +54,22 @@ The game uses a simple state machine:
 
 Player position tracked separately from map via `tg_playerX`, `tg_playerY`, and `tg_underPlayer` (stores tile type under player).
 
-### Button API
+### Platform API
 
 ```cpp
-button_pressed(BUTTON_A)   // Rising edge
-button_held(BUTTON_UP)     // Currently down
-dpad_up_pressed()          // Convenience for d-pad
+// Input
+platform_button_pressed(BTN_A)   // Rising edge
+platform_button_held(BTN_UP)     // Currently down
+platform_dpad_up_pressed()       // Convenience for d-pad
+
+// Display
+platform_clear_screen()
+platform_set_cursor(x, y)
+platform_print("text")
+platform_draw_tile(tileX, tileY, spriteData)
+platform_render()
+
+// Sound
+platform_beep(freq, duration_ms)
+platform_play_melody(notes, durations, len)
 ```

@@ -1,8 +1,19 @@
 #ifndef TG_T9_INPUT_H
 #define TG_T9_INPUT_H
 
-#include <Arduino.h>
-#include "../shared/hardware.h"
+#include "../shared/platform.h"
+#include <string.h>
+#include <stdio.h>
+
+// Note frequencies (if not defined elsewhere)
+#ifndef NOTE_C4
+#define NOTE_C4   262
+#define NOTE_E4   330
+#define NOTE_G4   392
+#define NOTE_C5   523
+#define NOTE_E5   659
+#define NOTE_G5   784
+#endif
 
 // Forward declaration for dictionary
 uint8_t findPredictions(const char* prefix, const char** results, uint8_t maxResults);
@@ -39,7 +50,7 @@ char t9Buffer[13];              // Input buffer (12 chars + null)
 uint8_t t9CursorPos = 0;        // Cursor position in buffer
 uint8_t t9GridX = 1;            // Grid cursor X (0-2), start at middle (2)
 uint8_t t9GridY = 0;            // Grid cursor Y (0-3), start at top row
-uint8_t t9LastKey = -1;         // Last pressed key number (for cycling)
+uint8_t t9LastKey = 255;        // Last pressed key number (for cycling), 255 = none
 uint8_t t9LetterIndex = 0;      // Index within current key's letters
 bool t9CharPending = false;     // Is there a pending character?
 unsigned long t9LastKeyTime = 0;
@@ -64,7 +75,7 @@ void t9Init(const char* initialText = "") {
     t9CursorPos = strlen(t9Buffer);
     t9GridX = 1;  // Start at center (key 2)
     t9GridY = 0;
-    t9LastKey = -1;
+    t9LastKey = 255;
     t9LetterIndex = 0;
     t9CharPending = false;
     t9LastKeyTime = 0;
@@ -87,7 +98,7 @@ int8_t t9GetSelectedKey() {
 
 // Get current pending character (or 0 if none)
 char t9GetPendingChar() {
-    if (!t9CharPending || t9LastKey < 0 || t9LastKey > 9) return 0;
+    if (!t9CharPending || t9LastKey > 9) return 0;
     const char* letters = T9_KEYS[t9LastKey];
     uint8_t len = strlen(letters);
     if (len == 0 || t9LetterIndex >= len) return 0;
@@ -106,7 +117,7 @@ void t9ConfirmChar() {
     }
     t9CharPending = false;
     t9LetterIndex = 0;
-    t9LastKey = -1;
+    t9LastKey = 255;
 
     // Update predictions
     t9PredictionCount = findPredictions(t9Buffer, t9Predictions, 3);
@@ -119,7 +130,7 @@ void t9DeleteChar() {
         // Cancel pending char
         t9CharPending = false;
         t9LetterIndex = 0;
-        t9LastKey = -1;
+        t9LastKey = 255;
     } else if (t9CursorPos > 0) {
         t9CursorPos--;
         t9Buffer[t9CursorPos] = '\0';
@@ -156,7 +167,7 @@ void t9PressKey(uint8_t key) {
         t9LastKey = key;
     }
 
-    t9LastKeyTime = millis();
+    t9LastKeyTime = platform_millis();
 }
 
 // Add space (confirms pending char first)
@@ -181,7 +192,7 @@ void t9SelectPrediction() {
         if (t9CharPending) {
             t9CharPending = false;
             t9LetterIndex = 0;
-            t9LastKey = -1;
+            t9LastKey = 255;
         }
         // Copy prediction to buffer
         char wordBuf[13];
@@ -189,7 +200,7 @@ void t9SelectPrediction() {
         const char* ptr = t9Predictions[t9PredictionIndex];
         uint8_t i = 0;
         char c;
-        while ((c = pgm_read_byte(ptr + i)) != '\0' && i < 12) {
+        while ((c = platform_pgm_read_byte(ptr + i)) != '\0' && i < 12) {
             wordBuf[i++] = c;
         }
         wordBuf[i] = '\0';
@@ -224,73 +235,73 @@ void t9NavigatePredictions(int8_t direction) {
 
 // Handle T9 input, returns true when input is confirmed or cancelled
 bool t9HandleInput() {
-    unsigned long now = millis();
+    unsigned long now = platform_millis();
 
     // Auto-confirm after 2 second timeout
     if (t9CharPending && (now - t9LastKeyTime >= T9_TIMEOUT)) {
         t9ConfirmChar();
-        playBeep(NOTE_C5, 30);
+        platform_beep(NOTE_C5, 30);
     }
 
     // In prediction mode, D-pad navigates predictions
     if (t9InPredictionMode) {
-        if (dpad_up_pressed()) {
+        if (platform_dpad_up_pressed()) {
             t9NavigatePredictions(-1);
-            playBeep(NOTE_G4, 30);
+            platform_beep(NOTE_G4, 30);
         }
-        if (dpad_down_pressed()) {
+        if (platform_dpad_down_pressed()) {
             t9NavigatePredictions(1);
-            playBeep(NOTE_E4, 30);
+            platform_beep(NOTE_E4, 30);
         }
-        if (button_pressed(BUTTON_A)) {
+        if (platform_button_pressed(BTN_A)) {
             t9SelectPrediction();
             t9InPredictionMode = false;
-            playBeep(NOTE_G5, 50);
+            platform_beep(NOTE_G5, 50);
         }
-        if (button_pressed(BUTTON_B) || dpad_left_pressed() || dpad_right_pressed()) {
+        if (platform_button_pressed(BTN_B) || platform_dpad_left_pressed() || platform_dpad_right_pressed()) {
             t9InPredictionMode = false;
-            playBeep(NOTE_C5, 30);
+            platform_beep(NOTE_C5, 30);
         }
         return false;
     }
 
     // D-pad navigation on grid
-    if (dpad_up_pressed()) {
+    if (platform_dpad_up_pressed()) {
         if (t9GridY > 0) {
             t9GridY--;
-            playBeep(NOTE_G4, 30);
+            platform_beep(NOTE_G4, 30);
         }
     }
-    if (dpad_down_pressed()) {
+    if (platform_dpad_down_pressed()) {
         if (t9GridY < 3) {
             t9GridY++;
-            playBeep(NOTE_E4, 30);
+            platform_beep(NOTE_E4, 30);
         }
     }
-    if (dpad_left_pressed()) {
+    if (platform_dpad_left_pressed()) {
         if (t9GridX > 0) {
             t9GridX--;
-            playBeep(NOTE_G4, 30);
+            platform_beep(NOTE_G4, 30);
         }
     }
-    if (dpad_right_pressed()) {
+    if (platform_dpad_right_pressed()) {
         if (t9GridX < 2) {
             t9GridX++;
-            playBeep(NOTE_E4, 30);
+            platform_beep(NOTE_E4, 30);
         }
     }
 
     // A button - press selected key or action
-    if (button_pressed(BUTTON_A)) {
+    if (platform_button_pressed(BTN_A)) {
         int8_t key = t9GetSelectedKey();
         if (key >= 0) {
             // Number key 0-9
             t9PressKey(key);
-            playBeep(NOTE_G4, 30);
+            platform_beep(NOTE_G4, 30);
         } else if (key == -1) {
             // DEL
             t9DeleteChar();
-            playBeep(NOTE_C4, 30);
+            platform_beep(NOTE_C4, 30);
         } else if (key == -2) {
             // OK - confirm input
             if (t9CharPending) {
@@ -298,36 +309,36 @@ bool t9HandleInput() {
             }
             if (strlen(t9Buffer) > 0) {
                 t9InputComplete = true;
-                playBeep(NOTE_G5, 50);
+                platform_beep(NOTE_G5, 50);
                 return true;
             } else {
-                playBeep(NOTE_C4, 100);  // Error - empty name
+                platform_beep(NOTE_C4, 100);  // Error - empty name
             }
         }
     }
 
     // B button - space (tap) or cancel (if buffer empty and no pending)
-    if (button_pressed(BUTTON_B)) {
+    if (platform_button_pressed(BTN_B)) {
         if (t9CharPending || t9CursorPos > 0) {
             // Add space
             t9AddSpace();
-            playBeep(NOTE_E5, 30);
+            platform_beep(NOTE_E5, 30);
         } else {
             // Cancel - empty buffer
             t9InputCancelled = true;
-            playBeep(NOTE_C4, 50);
+            platform_beep(NOTE_C4, 50);
             return true;
         }
     }
 
     // Long press B to cancel (check if held for 500ms)
     static unsigned long bPressStart = 0;
-    if (button_held(BUTTON_B)) {
+    if (platform_button_held(BTN_B)) {
         if (bPressStart == 0) {
             bPressStart = now;
         } else if (now - bPressStart >= 500) {
             t9InputCancelled = true;
-            playBeep(NOTE_C4, 100);
+            platform_beep(NOTE_C4, 100);
             bPressStart = 0;
             return true;
         }

@@ -26,7 +26,7 @@ enum Button {
 
 // Button pin mapping
 static const uint8_t _buttonPins[BUTTON_COUNT] = {
-    BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_A, BTN_B
+    PIN_BTN_UP, PIN_BTN_DOWN, PIN_BTN_LEFT, PIN_BTN_RIGHT, PIN_BTN_A, PIN_BTN_B
 };
 
 // Button states for debouncing
