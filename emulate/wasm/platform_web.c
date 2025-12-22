@@ -246,6 +246,8 @@ int platform_get_framebuffer_size(void) {
 
 static bool _buttonCurrent[BTN_COUNT] = {0};
 static bool _buttonPrevious[BTN_COUNT] = {0};
+static bool _buttonJustPressed[BTN_COUNT] = {0};
+static bool _buttonJustReleased[BTN_COUNT] = {0};
 static unsigned long _buttonPressStart[BTN_COUNT] = {0};
 
 EMSCRIPTEN_KEEPALIVE
@@ -457,21 +459,26 @@ void platform_draw_xbm(int x, int y, int w, int h, const uint8_t* bitmap, bool c
 
 void platform_input_update(void) {
     for (int i = 0; i < BTN_COUNT; i++) {
-        _buttonPrevious[i] = _buttonCurrent[i];
+        // Compute edge states BEFORE copying
+        _buttonJustPressed[i] = _buttonCurrent[i] && !_buttonPrevious[i];
+        _buttonJustReleased[i] = !_buttonCurrent[i] && _buttonPrevious[i];
 
         // Track press start time
-        if (_buttonCurrent[i] && !_buttonPrevious[i]) {
+        if (_buttonJustPressed[i]) {
             _buttonPressStart[i] = platform_millis();
         }
+
+        // Copy current to previous for next frame
+        _buttonPrevious[i] = _buttonCurrent[i];
     }
 }
 
 bool platform_button_pressed(PlatformButton btn) {
-    return _buttonCurrent[btn] && !_buttonPrevious[btn];
+    return _buttonJustPressed[btn];
 }
 
 bool platform_button_released(PlatformButton btn) {
-    return !_buttonCurrent[btn] && _buttonPrevious[btn];
+    return _buttonJustReleased[btn];
 }
 
 bool platform_button_held(PlatformButton btn) {
