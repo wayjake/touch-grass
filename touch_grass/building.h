@@ -62,8 +62,10 @@ bool isInteriorWalkable(int x, int y) {
         return false;
     }
     char tile = building_map[y][x];
-    // Can walk on floor and door
-    return tile == TG_FLOOR || tile == TG_DOOR;
+    // Can walk on floor, door, and furniture (interact by walking onto them)
+    return tile == TG_FLOOR || tile == TG_DOOR ||
+           tile == TG_BED || tile == TG_DESK ||
+           tile == TG_STOVE || tile == TG_STOVE_LIT;
 }
 
 // Move player inside building

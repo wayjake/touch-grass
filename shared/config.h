@@ -1,13 +1,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// Hardware pins - Buttons
-#define BTN_UP          38
-#define BTN_DOWN        35
-#define BTN_LEFT        36
-#define BTN_RIGHT       37
-#define BTN_A           19
-#define BTN_B           20
+// Hardware pins - Buttons (legacy, use platform API instead)
+#define PIN_BTN_UP          38
+#define PIN_BTN_DOWN        35
+#define PIN_BTN_LEFT        36
+#define PIN_BTN_RIGHT       37
+#define PIN_BTN_A           19
+#define PIN_BTN_B           20
 
 // Hardware pins - Audio
 #define BUZZER_PIN_1    5

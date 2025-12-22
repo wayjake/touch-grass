@@ -87,8 +87,34 @@ This allows players to cross isolated water tiles to reach blocked areas.
 1. **Explore** - Find the Chest to get tools
 2. **Gather** - Cut trees for Wood, harvest Shrubs for Fruit
 3. **Sustain** - Plant Seeds, eat Fruit to survive
-4. **Build** - Create structures with Hammer + 3 Wood
+4. **Build** - Create cabin with Hammer + 4 Wood (1 per tile)
 5. **Survive** - Avoid drowning and starvation
+
+## Buildings
+
+Buildings are 2x2 tile structures that can be entered.
+
+**Building Parts:**
+- Use "Build" action on grass/dirt to place a building part (costs 1 Wood)
+- Requires Hammer in inventory
+- When 4 building parts form a 2x2 grid, it becomes a complete cabin
+- Only complete cabins can be entered (shows "Enter" option)
+- Incomplete parts just show "Examine"
+- Total cost: 4 Wood + Hammer
+
+**Building Interior:**
+- 6x5 interior space with walls
+- Pre-furnished with:
+  - **Bed** (2 tiles) - Rest to restore 10 hunger
+  - **Desk/Computer** (2 tiles) - Decorative
+  - **Stove** - Light fire, cook fruit
+  - **Door** - Exit building
+
+**Cooking:**
+1. Light the stove (creates fire)
+2. Have Fruit in inventory
+3. Select "Cook Fruit" at stove
+4. Cooked Fruit restores 50 hunger (vs 25 for raw)
 
 ## Technical Notes
 
@@ -96,3 +122,4 @@ This allows players to cross isolated water tiles to reach blocked areas.
 - Tile size: 8x8 pixels
 - Player rendered as sprite, terrain as ASCII letters
 - Inventory: 12 slots maximum
+- Building interior: 6x5 tiles
