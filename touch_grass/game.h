@@ -90,6 +90,39 @@ static const int deathDurations[] PLATFORM_PROGMEM = { 200, 200, 400, 100 };
 // Helper Functions
 // ============================================================================
 
+// Check if a 2x2 area starting at (x,y) is all building tiles
+static bool isComplete2x2At(int x, int y) {
+    if (x < 0 || y < 0 || x + 1 >= MAP_WIDTH || y + 1 >= MAP_HEIGHT) return false;
+    return tg_map[y][x] == TG_BUILDING &&
+           tg_map[y][x+1] == TG_BUILDING &&
+           tg_map[y+1][x] == TG_BUILDING &&
+           tg_map[y+1][x+1] == TG_BUILDING;
+}
+
+// Check if position is part of any complete 2x2 building
+static bool isPartOfCompleteBuilding(int x, int y) {
+    if (tg_map[y][x] != TG_BUILDING) return false;
+    return isComplete2x2At(x, y) ||
+           isComplete2x2At(x-1, y) ||
+           isComplete2x2At(x, y-1) ||
+           isComplete2x2At(x-1, y-1);
+}
+
+// Check if position is the top-left corner of a complete 2x2 building
+static bool isBuildingTopLeft(int x, int y) {
+    if (tg_map[y][x] != TG_BUILDING) return false;
+    if (!isComplete2x2At(x, y)) return false;
+    bool topClear = (y == 0) || (tg_map[y-1][x] != TG_BUILDING);
+    bool leftClear = (x == 0) || (tg_map[y][x-1] != TG_BUILDING);
+    return topClear && leftClear;
+}
+
+// Check if position is part of a building but NOT top-left
+static bool isBuildingNonOrigin(int x, int y) {
+    if (tg_map[y][x] != TG_BUILDING) return false;
+    return !isBuildingTopLeft(x, y);
+}
+
 static bool processAction() {
     if (decrementHunger()) {
         deathReason = DEATH_STARVED;
@@ -374,39 +407,6 @@ static bool executeItemAction(ItemType item, uint8_t action) {
     }
 
     return false;
-}
-
-// Check if a 2x2 area starting at (x,y) is all building tiles
-static bool isComplete2x2At(int x, int y) {
-    if (x < 0 || y < 0 || x + 1 >= MAP_WIDTH || y + 1 >= MAP_HEIGHT) return false;
-    return tg_map[y][x] == TG_BUILDING &&
-           tg_map[y][x+1] == TG_BUILDING &&
-           tg_map[y+1][x] == TG_BUILDING &&
-           tg_map[y+1][x+1] == TG_BUILDING;
-}
-
-// Check if position is part of any complete 2x2 building
-static bool isPartOfCompleteBuilding(int x, int y) {
-    if (tg_map[y][x] != TG_BUILDING) return false;
-    return isComplete2x2At(x, y) ||
-           isComplete2x2At(x-1, y) ||
-           isComplete2x2At(x, y-1) ||
-           isComplete2x2At(x-1, y-1);
-}
-
-// Check if position is the top-left corner of a complete 2x2 building
-static bool isBuildingTopLeft(int x, int y) {
-    if (tg_map[y][x] != TG_BUILDING) return false;
-    if (!isComplete2x2At(x, y)) return false;
-    bool topClear = (y == 0) || (tg_map[y-1][x] != TG_BUILDING);
-    bool leftClear = (x == 0) || (tg_map[y][x-1] != TG_BUILDING);
-    return topClear && leftClear;
-}
-
-// Check if position is part of a building but NOT top-left
-static bool isBuildingNonOrigin(int x, int y) {
-    if (tg_map[y][x] != TG_BUILDING) return false;
-    return !isBuildingTopLeft(x, y);
 }
 
 static uint8_t getFurnitureActions(char furniture, const char** actionNames) {
