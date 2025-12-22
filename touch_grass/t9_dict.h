@@ -1,13 +1,15 @@
 #ifndef TG_T9_DICT_H
 #define TG_T9_DICT_H
 
-#include <Arduino.h>
+#include "../shared/platform.h"
+#include <ctype.h>
+#include <string.h>
 
 // T9 Predictive Dictionary
 // ~600 common words, alphabetically sorted
 // Focus: common nouns, names, game terms, short words
 
-const char T9_DICT[] PROGMEM =
+const char T9_DICT[] PLATFORM_PROGMEM =
     // A
     "ACE\0" "ADAM\0" "ADD\0" "ADVENTURE\0" "AGE\0" "AIM\0" "AIR\0" "ALEX\0"
     "ALL\0" "ALPHA\0" "AMY\0" "AND\0" "ANN\0" "ANT\0" "APE\0" "APP\0"
@@ -223,7 +225,7 @@ uint8_t findPredictions(const char* prefix, const char** results, uint8_t maxRes
         // Check if this word matches prefix
         bool matches = true;
         for (uint8_t i = 0; i < prefixLen && matches; i++) {
-            char dictChar = pgm_read_byte(dictPtr + i);
+            char dictChar = platform_pgm_read_byte(dictPtr + i);
             if (dictChar == '\0' || toupper(prefix[i]) != dictChar) {
                 matches = false;
             }
@@ -234,7 +236,7 @@ uint8_t findPredictions(const char* prefix, const char** results, uint8_t maxRes
         }
 
         // Skip to next word (find null terminator)
-        while (pgm_read_byte(dictPtr) != '\0') {
+        while (platform_pgm_read_byte(dictPtr) != '\0') {
             dictPtr++;
         }
         dictPtr++;  // Skip the null terminator
@@ -247,7 +249,7 @@ uint8_t findPredictions(const char* prefix, const char** results, uint8_t maxRes
 void copyDictWord(const char* dictPtr, char* buffer, uint8_t maxLen) {
     uint8_t i = 0;
     char c;
-    while ((c = pgm_read_byte(dictPtr + i)) != '\0' && i < maxLen - 1) {
+    while ((c = platform_pgm_read_byte(dictPtr + i)) != '\0' && i < maxLen - 1) {
         buffer[i++] = c;
     }
     buffer[i] = '\0';
