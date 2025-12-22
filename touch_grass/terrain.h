@@ -74,7 +74,8 @@ void generateTreeCluster(int centerX, int centerY, int size) {
 
 // Check if a tile type is solid (blocks movement regardless of position)
 bool isSolidTile(char tile) {
-    return tile == TG_BUILDING;
+    // Buildings are walkable (player can enter them)
+    return false;
 }
 
 // Count adjacent water tiles at a position
@@ -104,7 +105,8 @@ bool isShallowWater(int x, int y) {
 
 // Check if a tile is walkable (for movement)
 bool isWalkable(char tile) {
-    return tile != TG_WATER && tile != TG_BUILDING;
+    // Buildings are walkable (player can enter them)
+    return tile != TG_WATER;
 }
 
 // Check if a position is valid for the player (includes shallow water)
@@ -271,13 +273,16 @@ void setTileUnderPlayer(char newTile) {
     tg_underPlayer = newTile;
 }
 
-// Check if a 4x4 area can be built on (all grass or dirt, player at top-left)
-bool canBuild4x4() {
-    for (int dy = 0; dy < 4; dy++) {
-        for (int dx = 0; dx < 4; dx++) {
+// Check if a 2x2 area can be built on (all grass or dirt, player at top-left)
+bool canBuild2x2() {
+    // Player is at top-left, building extends down and right
+    // Check bounds
+    if (tg_playerX + 1 >= MAP_WIDTH || tg_playerY + 1 >= MAP_HEIGHT) return false;
+
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
             int x = tg_playerX + dx;
             int y = tg_playerY + dy;
-            if (x >= MAP_WIDTH || y >= MAP_HEIGHT) return false;
             char tile = tg_map[y][x];
             // Allow building on grass or dirt only
             if (tile != TG_GRASS && tile != TG_DIRT) return false;
@@ -286,10 +291,10 @@ bool canBuild4x4() {
     return true;
 }
 
-// Place a 4x4 building (fills with building tiles)
-void placeBuilding4x4() {
-    for (int dy = 0; dy < 4; dy++) {
-        for (int dx = 0; dx < 4; dx++) {
+// Place a 2x2 building (fills with building tiles, player at top-left)
+void placeBuilding2x2() {
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
             int x = tg_playerX + dx;
             int y = tg_playerY + dy;
             if (x < MAP_WIDTH && y < MAP_HEIGHT) {
