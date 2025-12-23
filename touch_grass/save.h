@@ -11,6 +11,11 @@
 #include <LittleFS.h>
 #endif
 
+// Web platform uses EM_ASM to call JavaScript
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #define SAVE_SLOT_COUNT 6
 #define SAVE_NAME_MAX 12
 #define SAVE_VERSION 1
@@ -92,6 +97,15 @@ bool initSaveSystem() {
             }
         }
     }
+#elif defined(__EMSCRIPTEN__)
+    // Load most recent slot from localStorage
+    mostRecentSlot = EM_ASM_INT({
+        var val = localStorage.getItem('touchgrass_last_slot');
+        return val !== null ? parseInt(val, 10) : -1;
+    });
+    if (mostRecentSlot >= SAVE_SLOT_COUNT) {
+        mostRecentSlot = -1;
+    }
 #endif
     return true;
 }
@@ -120,6 +134,50 @@ bool readSaveHeader(uint8_t slot, SaveHeader* header) {
     file.close();
 
     return bytesRead == sizeof(SaveHeader);
+#elif defined(__EMSCRIPTEN__)
+    // Check if slot exists in localStorage
+    int exists = EM_ASM_INT({
+        var key = 'touchgrass_slot_' + $0;
+        return localStorage.getItem(key) !== null ? 1 : 0;
+    }, slot);
+
+    if (!exists) {
+        header->valid = 0x00;
+        header->name[0] = '\0';
+        return true;
+    }
+
+    // Read header data from localStorage via JavaScript
+    header->valid = 0x01;
+    header->version = SAVE_VERSION;
+
+    // Get save name
+    EM_ASM({
+        var key = 'touchgrass_slot_' + $0;
+        var saveJson = localStorage.getItem(key);
+        if (saveJson) {
+            var save = JSON.parse(saveJson);
+            var name = save.name || "";
+            var maxLen = $2;
+            for (var i = 0; i < maxLen && i < name.length; i++) {
+                HEAPU8[$1 + i] = name.charCodeAt(i);
+            }
+            HEAPU8[$1 + Math.min(name.length, maxLen)] = 0;
+        }
+    }, slot, header->name, SAVE_NAME_MAX);
+
+    // Get timestamp
+    header->timestamp = EM_ASM_INT({
+        var key = 'touchgrass_slot_' + $0;
+        var saveJson = localStorage.getItem(key);
+        if (saveJson) {
+            var save = JSON.parse(saveJson);
+            return save.timestamp || 0;
+        }
+        return 0;
+    }, slot);
+
+    return true;
 #else
     header->valid = 0x00;
     header->name[0] = '\0';
@@ -169,6 +227,10 @@ bool setMostRecentSave(uint8_t slot) {
 
     f.write(slot);
     f.close();
+#elif defined(__EMSCRIPTEN__)
+    EM_ASM({
+        localStorage.setItem("touchgrass_last_slot", $0.toString());
+    }, slot);
 #endif
     mostRecentSlot = slot;
     return true;
@@ -260,6 +322,40 @@ bool saveGame(uint8_t slot, const char* name, bool inBuilding) {
     file.close();
 
     if (written != sizeof(SaveSlot)) return false;
+#elif defined(__EMSCRIPTEN__)
+    // Serialize SaveData as base64 and store in localStorage
+    EM_ASM({
+        var slotNum = $0;
+        var namePtr = $1;
+        var timestamp = $2;
+        var dataPtr = $3;
+        var dataSize = $4;
+
+        // Read name string from WASM memory
+        var saveName = "";
+        for (var i = 0; i < 13; i++) {
+            var c = HEAPU8[namePtr + i];
+            if (c === 0) break;
+            saveName += String.fromCharCode(c);
+        }
+
+        // Read binary SaveData and encode as base64
+        var bytes = new Uint8Array(dataSize);
+        for (var i = 0; i < dataSize; i++) {
+            bytes[i] = HEAPU8[dataPtr + i];
+        }
+        var binary = "";
+        for (var i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        var dataBase64 = btoa(binary);
+
+        // Manually construct JSON to avoid object literal syntax issues
+        var jsonStr = '{"version":1,"name":"' + saveName + '","timestamp":' + timestamp + ',"data":"' + dataBase64 + '"}';
+
+        var key = "touchgrass_slot_" + slotNum;
+        localStorage.setItem(key, jsonStr);
+    }, slot, name, save.header.timestamp, &save.data, sizeof(SaveData));
 #endif
 
     // Update cached header
@@ -299,8 +395,53 @@ int8_t loadGame(uint8_t slot) {
     setMostRecentSave(slot);
 
     return save.data.wasInBuilding;
+#elif defined(__EMSCRIPTEN__)
+    // Load from localStorage
+    SaveData loadedData;
+    int wasInBuilding = EM_ASM_INT({
+        var slot = $0;
+        var dataPtr = $1;
+        var dataSize = $2;
+
+        var key = "touchgrass_slot_" + slot;
+        var saveJson = localStorage.getItem(key);
+        if (!saveJson) return -1;
+
+        try {
+            var save = JSON.parse(saveJson);
+            if (!save.data) return -1;
+
+            // Decode base64 to binary
+            var binary = atob(save.data);
+            if (binary.length !== dataSize) {
+                console.warn("Save data size mismatch:", binary.length, "vs", dataSize);
+                return -1;
+            }
+
+            // Write to WASM memory
+            for (var i = 0; i < binary.length; i++) {
+                HEAPU8[dataPtr + i] = binary.charCodeAt(i);
+            }
+
+            // Return wasInBuilding flag (last byte of SaveData)
+            return HEAPU8[dataPtr + dataSize - 1];
+        } catch (e) {
+            console.error("Failed to load save:", e);
+            return -1;
+        }
+    }, slot, &loadedData, sizeof(SaveData));
+
+    if (wasInBuilding < 0) return -1;
+
+    // Unpack into game state
+    unpackGameState(&loadedData);
+
+    // Update most recent
+    setMostRecentSave(slot);
+
+    return wasInBuilding;
 #else
-    return -1;  // Save not supported on web
+    return -1;  // Save not supported
 #endif
 }
 
@@ -315,6 +456,11 @@ bool deleteSave(uint8_t slot) {
     if (LittleFS.exists(filename)) {
         LittleFS.remove(filename);
     }
+#elif defined(__EMSCRIPTEN__)
+    EM_ASM({
+        var key = "touchgrass_slot_" + $0;
+        localStorage.removeItem(key);
+    }, slot);
 #endif
 
     // Clear cached header
@@ -326,6 +472,10 @@ bool deleteSave(uint8_t slot) {
         mostRecentSlot = -1;
 #ifdef ARDUINO
         LittleFS.remove("/saves/last.idx");
+#elif defined(__EMSCRIPTEN__)
+        EM_ASM({
+            localStorage.removeItem("touchgrass_last_slot");
+        });
 #endif
     }
 

@@ -117,6 +117,18 @@ static bool isBuildingTopLeft(int x, int y) {
     return topClear && leftClear;
 }
 
+// Check if player is standing on any tile of the complete 2x2 building at (topLeftX, topLeftY)
+static bool isPlayerOnBuilding2x2(int topLeftX, int topLeftY) {
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
+            if ((int)tg_playerX == topLeftX + dx && (int)tg_playerY == topLeftY + dy) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Check if position is part of a building but NOT top-left
 static bool isBuildingNonOrigin(int x, int y) {
     if (tg_map[y][x] != TG_BUILDING) return false;
@@ -590,25 +602,59 @@ static void drawWorldMap() {
     for (int y = 0; y < MAP_HEIGHT; y++) {
         for (int x = 0; x < MAP_WIDTH; x++) {
             char tile = tg_map[y][x];
+            bool isPlayerHere = (x == tg_playerX && y == tg_playerY);
 
-            if (x == tg_playerX && y == tg_playerY) {
-                platform_draw_tile(x, y, TILE_CHAR);
+            // Handle complete 2x2 buildings specially
+            if (tile == TG_BUILDING && isPartOfCompleteBuilding(x, y)) {
+                // Find the top-left of this building
+                int topLeftX = x, topLeftY = y;
+                if (isComplete2x2At(x, y)) {
+                    topLeftX = x; topLeftY = y;
+                } else if (x > 0 && isComplete2x2At(x-1, y)) {
+                    topLeftX = x - 1; topLeftY = y;
+                } else if (y > 0 && isComplete2x2At(x, y-1)) {
+                    topLeftX = x; topLeftY = y - 1;
+                } else if (x > 0 && y > 0 && isComplete2x2At(x-1, y-1)) {
+                    topLeftX = x - 1; topLeftY = y - 1;
+                }
+
+                // Check if player is on any tile of this building
+                if (isPlayerOnBuilding2x2(topLeftX, topLeftY)) {
+                    // Player is on building - draw individual 8x8 tiles
+                    if (isPlayerHere) {
+                        platform_draw_tile(x, y, TILE_CHAR);
+                    } else {
+                        platform_draw_tile(x, y, TILE_BUILDING);
+                    }
+                } else {
+                    // Player not on building - draw 16x16 cabin from top-left only
+                    if (isBuildingTopLeft(x, y)) {
+                        drawTile16(x * PLATFORM_TILE_SIZE, y * PLATFORM_TILE_SIZE, TILE_CABIN_16);
+                    }
+                    // Non-top-left tiles are covered by the 16x16 sprite
+                }
                 continue;
             }
 
-            if (isBuildingNonOrigin(x, y)) {
-                continue;
-            }
-
+            // Draw non-building tile content
             if (tile == TG_CHEST) {
-                platform_draw_tile(x, y, TILE_CHEST);
-            } else if (isBuildingTopLeft(x, y)) {
-                drawTile16(x * PLATFORM_TILE_SIZE, y * PLATFORM_TILE_SIZE, TILE_CABIN_16);
+                if (!isPlayerHere) {
+                    platform_draw_tile(x, y, TILE_CHEST);
+                }
             } else if (tile == TG_BUILDING) {
-                platform_draw_tile(x, y, TILE_BUILDING);
-            } else {
+                // Single building tile (not part of complete 2x2)
+                if (!isPlayerHere) {
+                    platform_draw_tile(x, y, TILE_BUILDING);
+                }
+            } else if (!isPlayerHere) {
+                // Only draw regular tile letter if player isn't here
                 platform_set_cursor(x * PLATFORM_TILE_SIZE, y * PLATFORM_TILE_SIZE);
                 platform_print_char(tile);
+            }
+
+            // Draw player on their tile
+            if (isPlayerHere) {
+                platform_draw_tile(x, y, TILE_CHAR);
             }
         }
     }

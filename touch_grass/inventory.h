@@ -127,7 +127,7 @@ bool hasItem(ItemType item) {
 
 // Get item name
 const char* getItemName(ItemType item) {
-    if (item < ITEM_TYPE_COUNT) {
+    if ((int)item >= 0 && (int)item < ITEM_TYPE_COUNT) {
         return itemNames[item];
     }
     return "Unknown";

@@ -11,14 +11,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build firmware (outputs to build/)
-arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir build touch-grass.ino
+./build.sh
 
-# Watch for changes and auto-rebuild
+# Watch for changes and auto-rebuild (requires inotifywait)
 ./watch.sh
+
+# Flash to ESP32-S3 device
+./flash.sh
 
 # Run in Wokwi simulator
 wokwi-cli .
 ```
+
+## Web Emulation
+
+The game can run in a browser using WebAssembly:
+
+```bash
+# Build WASM (requires Emscripten SDK)
+cd emulate/wasm && ./build.sh
+
+# Install dependencies and run dev server
+cd emulate && npm install && npm run dev
+```
+
+The emulator is available at `http://localhost:5173/play`.
+
+**Controls:** Arrow keys (move), Z/Space (A button), X/Esc (B button)
+
+### Emulator Architecture
+
+- `emulate/` - React Router app with Tailwind CSS
+- `emulate/wasm/` - WASM build files
+  - `platform_web.c` - Web platform implementation
+  - `game_web.cpp` - Game wrapper for WASM
+  - `build.sh` - Emscripten build script (outputs to `emulate/public/wasm/`)
+- `emulate/app/routes/play.tsx` - Game canvas and input handling
 
 ## Architecture
 
