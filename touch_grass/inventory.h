@@ -12,14 +12,15 @@ enum ItemType {
     ITEM_WOOD,
     ITEM_HAMMER,
     ITEM_AXE,
-    ITEM_DIRT
+    ITEM_DIRT,
+    ITEM_LASSO
 };
 
-#define ITEM_TYPE_COUNT 8
+#define ITEM_TYPE_COUNT 9
 
 // Item names for display
 const char* const itemNames[ITEM_TYPE_COUNT] = {
-    "Empty", "Seed", "Fruit", "Cooked Fruit", "Wood", "Hammer", "Axe", "Dirt"
+    "Empty", "Seed", "Fruit", "Cooked Fruit", "Wood", "Hammer", "Axe", "Dirt", "Lasso"
 };
 
 // Inventory slot structure

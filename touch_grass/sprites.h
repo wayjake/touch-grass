@@ -281,6 +281,102 @@ const uint8_t TILE_WALL[8] PROGMEM = {
     0b10000001   // #      #
 };
 
+// Spirit NPC - ghostly figure
+const uint8_t TILE_SPIRIT[8] PROGMEM = {
+    0b00111100,  //   ####
+    0b01111110,  //  ######
+    0b01011010,  //  # ## #  (eyes)
+    0b01111110,  //  ######
+    0b01111110,  //  ######
+    0b01111110,  //  ######
+    0b01010110,  //  # # ##
+    0b01000010   //  #    #  (wavy bottom)
+};
+
+// Mountain - rocky peak
+const uint8_t TILE_MOUNTAIN[8] PROGMEM = {
+    0b00010000,  //    #
+    0b00111000,  //   ###
+    0b00111000,  //   ###
+    0b01111100,  //  #####
+    0b01111100,  //  #####
+    0b11111110,  // #######
+    0b11111110,  // #######
+    0b11111111   // ########
+};
+
+// Snow ground - scattered dots
+const uint8_t TILE_SNOW[8] PROGMEM = {
+    0b10010010,  // #  #  #
+    0b00100100,  //   #  #
+    0b01001001,  //  #  #  #
+    0b10010010,  // #  #  #
+    0b00100100,  //   #  #
+    0b01001001,  //  #  #  #
+    0b10010010,  // #  #  #
+    0b00100100   //   #  #
+};
+
+// Ice - frozen water surface
+const uint8_t TILE_ICE[8] PROGMEM = {
+    0b11111111,  // ########
+    0b10000001,  // #      #
+    0b10111101,  // # #### #
+    0b10100101,  // # #  # #
+    0b10100101,  // # #  # #
+    0b10111101,  // # #### #
+    0b10000001,  // #      #
+    0b11111111   // ########
+};
+
+// Rabbit - small bunny creature
+const uint8_t TILE_RABBIT[8] PROGMEM = {
+    0b01000100,  //  #   #   (ears)
+    0b01000100,  //  #   #
+    0b00111000,  //   ###
+    0b01111100,  //  #####
+    0b01111100,  //  #####
+    0b00111000,  //   ###
+    0b00100100,  //   #  #
+    0b00100100   //   #  #   (feet)
+};
+
+// Wolf - predator creature
+const uint8_t TILE_WOLF[8] PROGMEM = {
+    0b01000010,  //  #    #  (ears)
+    0b11100111,  // ###  ###
+    0b01111110,  //  ######
+    0b00111100,  //   ####
+    0b01111110,  //  ######
+    0b01111110,  //  ######
+    0b01000010,  //  #    #
+    0b01000010   //  #    #  (legs)
+};
+
+// Snake - slithering creature
+const uint8_t TILE_SNAKE[8] PROGMEM = {
+    0b00011000,  //    ##    (head)
+    0b00111100,  //   ####
+    0b01100000,  //  ##
+    0b00110000,  //   ##
+    0b00011000,  //    ##
+    0b00001100,  //     ##
+    0b00000110,  //      ##
+    0b00000011   //       ## (tail)
+};
+
+// Bear - large predator
+const uint8_t TILE_BEAR[8] PROGMEM = {
+    0b01100110,  //  ##  ##  (ears)
+    0b11111111,  // ########
+    0b11011011,  // ## ## ## (eyes)
+    0b11111111,  // ########
+    0b01111110,  //  ######
+    0b01111110,  //  ######
+    0b01100110,  //  ##  ##
+    0b01100110   //  ##  ##  (legs)
+};
+
 // Tile type definitions - World tiles
 #define TG_GRASS    'g'
 #define TG_WATER    'w'
@@ -291,6 +387,16 @@ const uint8_t TILE_WALL[8] PROGMEM = {
 #define TG_BUILDING 'b'
 #define TG_SHRUB    's'
 #define TG_SEEDLING 'p'
+#define TG_SPIRIT   'X'   // Spirit NPC (not stored in map, rendered separately)
+#define TG_MOUNTAIN 'M'   // Mountain (extra energy, no building)
+#define TG_SNOW     'n'   // Snow ground
+#define TG_ICE      'i'   // Frozen water/lake
+
+// Creature types (for getTileSprite, not stored in map)
+#define TG_RABBIT   'R'
+#define TG_WOLF     'W'
+#define TG_SNAKE    'K'
+#define TG_BEAR     'A'
 
 // Interior tile types
 #define TG_FLOOR      '.'
@@ -312,6 +418,15 @@ const uint8_t* getTileSprite(char tileType) {
         case TG_BUILDING: return TILE_BUILDING;
         case TG_SHRUB:    return TILE_SHRUB;
         case TG_SEEDLING: return TILE_SEEDLING;
+        case TG_SPIRIT:   return TILE_SPIRIT;
+        case TG_MOUNTAIN: return TILE_MOUNTAIN;
+        case TG_SNOW:     return TILE_SNOW;
+        case TG_ICE:      return TILE_ICE;
+        // Creature sprites
+        case TG_RABBIT:   return TILE_RABBIT;
+        case TG_WOLF:     return TILE_WOLF;
+        case TG_SNAKE:    return TILE_SNAKE;
+        case TG_BEAR:     return TILE_BEAR;
         // Interior tiles
         case TG_FLOOR:    return TILE_FLOOR;
         case TG_BED:      return TILE_BED;

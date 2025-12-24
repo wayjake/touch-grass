@@ -5,6 +5,8 @@
 #include "terrain.h"
 #include "inventory.h"
 #include "building.h"
+#include "progression.h"
+#include "creatures.h"
 
 // Only include LittleFS on ESP32 platform
 #ifdef ARDUINO
@@ -55,6 +57,20 @@ struct SaveData {
 
     // Context
     uint8_t wasInBuilding;  // Was player inside building when saved?
+
+    // Progression state (added for game progression update)
+    uint8_t progressionFlags;  // Bitfield for progression bools
+    int8_t spiritX;
+    int8_t spiritY;
+    int16_t homeChunkX;
+    int16_t homeChunkY;
+    uint8_t homeLocalX;
+    uint8_t homeLocalY;
+
+    // Creature state
+    uint8_t creatureCount;
+    uint8_t creatureData[MAX_CREATURES * 4];  // type, x, y, flags per creature
+    int8_t caughtCreatureIdx;
 };
 
 struct SaveSlot {
@@ -264,6 +280,20 @@ void packGameState(SaveData* data, bool inBuilding) {
     data->currentBuildingY = current_building_y;
 
     data->wasInBuilding = inBuilding ? 1 : 0;
+
+    // Progression state
+    data->progressionFlags = packProgressionFlags();
+    data->spiritX = progression.spiritX;
+    data->spiritY = progression.spiritY;
+    data->homeChunkX = progression.homeChunkX;
+    data->homeChunkY = progression.homeChunkY;
+    data->homeLocalX = progression.homeLocalX;
+    data->homeLocalY = progression.homeLocalY;
+
+    // Creature state - initialize to safe defaults
+    data->creatureCount = 0;
+    data->caughtCreatureIdx = -1;
+    memset(data->creatureData, 0, sizeof(data->creatureData));
 }
 
 // Unpack SaveData into game state
@@ -292,6 +322,19 @@ void unpackGameState(const SaveData* data) {
     stove_lit = data->stoveLit != 0;
     current_building_x = data->currentBuildingX;
     current_building_y = data->currentBuildingY;
+
+    // Progression state
+    unpackProgressionFlags(data->progressionFlags);
+    progression.spiritX = data->spiritX;
+    progression.spiritY = data->spiritY;
+    progression.homeChunkX = data->homeChunkX;
+    progression.homeChunkY = data->homeChunkY;
+    progression.homeLocalX = data->homeLocalX;
+    progression.homeLocalY = data->homeLocalY;
+
+    // Creature state - initialize creatures (will be regenerated based on biome)
+    initCreatures();
+    spawnCreatures(0, 0);  // Respawn creatures in temperate biome for now
 }
 
 // Save current game to slot
