@@ -51,8 +51,8 @@ function getAudioContext(): AudioContext | null {
   return audioContext;
 }
 
-// Play a simple beep tone
-function playBeep(freq: number, durationMs: number) {
+// Play a simple beep tone with volume control (0-1)
+function playBeep(freq: number, durationMs: number, volume: number = 1.0) {
   const ctx = getAudioContext();
   if (!ctx || freq <= 0) return;
 
@@ -65,8 +65,9 @@ function playBeep(freq: number, durationMs: number) {
   oscillator.type = "square";
   oscillator.frequency.setValueAtTime(freq, ctx.currentTime);
 
-  // Quick fade out to avoid clicks
-  gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+  // Scale gain by volume (max 0.1 at full volume)
+  const gain = 0.1 * Math.max(0, Math.min(1, volume));
+  gainNode.gain.setValueAtTime(gain, ctx.currentTime);
   gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
 
   oscillator.start(ctx.currentTime);
@@ -74,7 +75,7 @@ function playBeep(freq: number, durationMs: number) {
 }
 
 // Play a melody by reading note/duration arrays from WASM memory
-function playMelody(module: GameModule, notesPtr: number, durationsPtr: number, length: number) {
+function playMelody(module: GameModule, notesPtr: number, durationsPtr: number, length: number, volume: number = 1.0) {
   const ctx = getAudioContext();
   if (!ctx || !module.HEAP32) return;
 
@@ -85,6 +86,9 @@ function playMelody(module: GameModule, notesPtr: number, durationsPtr: number, 
     notes.push(module.HEAP32[(notesPtr >> 2) + i]);
     durations.push(module.HEAP32[(durationsPtr >> 2) + i]);
   }
+
+  // Scale gain by volume (max 0.1 at full volume)
+  const gainValue = 0.1 * Math.max(0, Math.min(1, volume));
 
   // Schedule notes sequentially
   let time = ctx.currentTime;
@@ -100,7 +104,7 @@ function playMelody(module: GameModule, notesPtr: number, durationsPtr: number, 
 
       osc.type = "square";
       osc.frequency.setValueAtTime(freq, time);
-      gain.gain.setValueAtTime(0.1, time);
+      gain.gain.setValueAtTime(gainValue, time);
       gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
 
       osc.start(time);
@@ -193,9 +197,9 @@ export default function Play() {
 
       // Register sound functions on window for WASM to call
       (window as unknown as { playBeep: typeof playBeep }).playBeep = playBeep;
-      (window as unknown as { playMelody: (n: number, d: number, l: number) => void }).playMelody =
-        (notesPtr: number, durationsPtr: number, length: number) => {
-          playMelody(module, notesPtr, durationsPtr, length);
+      (window as unknown as { playMelody: (n: number, d: number, l: number, v: number) => void }).playMelody =
+        (notesPtr: number, durationsPtr: number, length: number, volume: number) => {
+          playMelody(module, notesPtr, durationsPtr, length, volume);
         };
       (window as unknown as { stopMelody: () => void }).stopMelody = () => {
         // No-op for now, melodies are fire-and-forget

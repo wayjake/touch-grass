@@ -501,18 +501,20 @@ static uint8_t _systemVolume;
 
 void platform_beep(int freq, int duration_ms) {
     if (_systemVolume == 0) return;  // Muted
+    float volume = _systemVolume / 100.0f;
     EM_ASM({
-        if (window.playBeep) window.playBeep($0, $1);
-    }, freq, duration_ms);
+        if (window.playBeep) window.playBeep($0, $1, $2);
+    }, freq, duration_ms, volume);
 }
 
 void platform_play_melody(const int* notes, const int* durations, int length) {
     if (_systemVolume == 0) return;  // Muted
+    float volume = _systemVolume / 100.0f;
     // For web, we play melody non-blocking via JS
     // Convert to simple beeps with delays handled by JS
     EM_ASM({
-        if (window.playMelody) window.playMelody($0, $1, $2);
-    }, notes, durations, length);
+        if (window.playMelody) window.playMelody($0, $1, $2, $3);
+    }, notes, durations, length, volume);
 }
 
 void platform_set_melody(const int* notes, const int* durations, int length) {

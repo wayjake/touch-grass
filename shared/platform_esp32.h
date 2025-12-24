@@ -248,42 +248,69 @@ static uint8_t _systemVolume = 80;      // 0-100
 static uint8_t _systemBrightness = 80;  // 0-100
 
 // ============================================================================
-// Sound
+// Sound (using LEDC for volume control via duty cycle)
 // ============================================================================
+
+#define BUZZER_LEDC_RESOLUTION 8  // 8-bit = 0-255 duty cycle
+
+static bool _buzzerInitialized = false;
+
+static void initBuzzer() {
+    if (!_buzzerInitialized) {
+        // ESP32 Arduino Core 3.x API: ledcAttach(pin, freq, resolution)
+        ledcAttach(PIN_BUZZER_1, 1000, BUZZER_LEDC_RESOLUTION);
+        _buzzerInitialized = true;
+    }
+}
 
 void platform_beep(int freq, int duration_ms) {
     if (_systemVolume == 0) return;  // Muted
-    tone(PIN_BUZZER_1, freq, duration_ms);
+    initBuzzer();
+
+    // Duty cycle based on volume (0-100 -> 0-127, max 50% duty for square wave)
+    uint8_t duty = (_systemVolume * 127) / 100;
+
+    ledcWriteTone(PIN_BUZZER_1, freq);
+    ledcWrite(PIN_BUZZER_1, duty);
+    delay(duration_ms);
+    ledcWrite(PIN_BUZZER_1, 0);
 }
 
 void platform_play_melody(const int* notes, const int* durations, int length) {
     if (_systemVolume == 0) return;  // Muted
+    initBuzzer();
+
+    uint8_t duty = (_systemVolume * 127) / 100;
+
     for (int i = 0; i < length; i++) {
         int note = pgm_read_word(&notes[i]);
         int duration = pgm_read_word(&durations[i]);
 
         if (note == 0) {  // NOTE_REST
-            noTone(PIN_BUZZER_1);
+            ledcWrite(PIN_BUZZER_1, 0);
         } else {
-            tone(PIN_BUZZER_1, note, duration);
+            ledcWriteTone(PIN_BUZZER_1, note);
+            ledcWrite(PIN_BUZZER_1, duty);
         }
         delay(duration + 30);
     }
-    noTone(PIN_BUZZER_1);
+    ledcWrite(PIN_BUZZER_1, 0);
 }
 
 void platform_set_melody(const int* notes, const int* durations, int length) {
+    initBuzzer();
     _bgNotes = notes;
     _bgDurations = durations;
     _bgMelodyLen = length;
     _bgMelodyIndex = 0;
     _bgNoteStartTime = millis();
     _bgCurrentNoteDuration = 0;
-    noTone(PIN_BUZZER_1);
+    ledcWrite(PIN_BUZZER_1, 0);
 }
 
 void platform_update_melody(void) {
     if (_bgNotes == nullptr || _bgMelodyLen == 0) return;
+    if (_systemVolume == 0) return;  // Muted
 
     unsigned long currentTime = millis();
 
@@ -299,10 +326,13 @@ void platform_update_melody(void) {
         _bgCurrentNoteDuration = pgm_read_word(&_bgDurations[_bgMelodyIndex]);
         _bgNoteStartTime = currentTime;
 
+        uint8_t duty = (_systemVolume * 127) / 100;
+
         if (note == 0) {
-            noTone(PIN_BUZZER_1);
+            ledcWrite(PIN_BUZZER_1, 0);
         } else {
-            tone(PIN_BUZZER_1, note, _bgCurrentNoteDuration);
+            ledcWriteTone(PIN_BUZZER_1, note);
+            ledcWrite(PIN_BUZZER_1, duty);
         }
     }
 }
@@ -311,7 +341,8 @@ void platform_stop_melody(void) {
     _bgNotes = nullptr;
     _bgDurations = nullptr;
     _bgMelodyLen = 0;
-    noTone(PIN_BUZZER_1);
+    initBuzzer();
+    ledcWrite(PIN_BUZZER_1, 0);
 }
 
 // ============================================================================
