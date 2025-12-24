@@ -66,7 +66,8 @@ static GameState gameState = STATE_SPLASH;
 static uint8_t menuSelection = 0;
 static uint8_t inventoryScroll = 0;
 static ItemType selectedItem = ITEM_NONE;
-static uint8_t inventoryTab = 0;  // 0 = Inventory, 1 = Status
+static uint8_t inventoryTab = 0;  // 0 = Inventory, 1 = Status, 2 = System
+static uint8_t sysMenuSelection = 0;  // 0 = Volume, 1 = Brightness
 static char interactingFurniture = TG_FLOOR;  // Currently interacting furniture
 
 // Save/Load state variables
@@ -1001,7 +1002,9 @@ static void drawInventoryScreen() {
     platform_set_cursor(0, 0);
     platform_print("[Inv]");
     platform_set_cursor(40, 0);
-    platform_print("  Status");
+    platform_print(" Stat");
+    platform_set_cursor(80, 0);
+    platform_print(" Sys");
     platform_draw_line(0, 10, 127, 10, true);
 
     uint8_t filledSlots = countFilledSlots();
@@ -1051,9 +1054,11 @@ static void drawStatusScreen() {
     platform_set_text_size(1);
 
     platform_set_cursor(0, 0);
-    platform_print("  Inv");
+    platform_print(" Inv");
     platform_set_cursor(40, 0);
-    platform_print("[Status]");
+    platform_print("[Stat]");
+    platform_set_cursor(80, 0);
+    platform_print(" Sys");
     platform_draw_line(0, 10, 127, 10, true);
 
     platform_set_cursor(0, 16);
@@ -1075,6 +1080,57 @@ static void drawStatusScreen() {
 
     platform_set_cursor(0, 56);
     platform_print("</>:Tab B:Back");
+}
+
+static void drawSystemScreen() {
+    platform_set_text_size(1);
+
+    platform_set_cursor(0, 0);
+    platform_print(" Inv");
+    platform_set_cursor(40, 0);
+    platform_print(" Stat");
+    platform_set_cursor(80, 0);
+    platform_print("[Sys]");
+    platform_draw_line(0, 10, 127, 10, true);
+
+    // Volume control
+    uint8_t volume = platform_get_volume();
+    platform_set_cursor(0, 18);
+    if (sysMenuSelection == 0) {
+        platform_print(">");
+    } else {
+        platform_print(" ");
+    }
+    platform_print("Volume: ");
+    platform_print_int(volume);
+    platform_print("%");
+    // Draw volume bar
+    platform_draw_rect(10, 30, 100, 8, true);
+    int volFill = (volume * 96) / 100;
+    if (volFill > 0) {
+        platform_fill_rect(12, 32, volFill, 4, true);
+    }
+
+    // Brightness control
+    uint8_t brightness = platform_get_brightness();
+    platform_set_cursor(0, 42);
+    if (sysMenuSelection == 1) {
+        platform_print(">");
+    } else {
+        platform_print(" ");
+    }
+    platform_print("Bright: ");
+    platform_print_int(brightness);
+    platform_print("%");
+    // Draw brightness bar
+    platform_draw_rect(10, 54, 100, 8, true);
+    int briFill = (brightness * 96) / 100;
+    if (briFill > 0) {
+        platform_fill_rect(12, 56, briFill, 4, true);
+    }
+
+    platform_set_cursor(0, 56);
+    platform_print("</>:Tab ^v:Sel A:Adj");
 }
 
 static void drawItemView() {
@@ -1608,9 +1664,10 @@ inline void game_loop() {
             inventoryScroll = 0;
             platform_beep(NOTE_C5, 30);
         }
-        if (platform_dpad_right_pressed() && inventoryTab < 1) {
+        if (platform_dpad_right_pressed() && inventoryTab < 2) {
             inventoryTab++;
             menuSelection = 0;
+            sysMenuSelection = 0;
             platform_beep(NOTE_C5, 30);
         }
 
@@ -1645,8 +1702,37 @@ inline void game_loop() {
                     }
                 }
             }
-        } else {
+        } else if (inventoryTab == 1) {
             drawStatusScreen();
+        } else if (inventoryTab == 2) {
+            drawSystemScreen();
+
+            // Up/down to select volume or brightness
+            if (platform_dpad_up_pressed() && sysMenuSelection > 0) {
+                sysMenuSelection--;
+                platform_beep(NOTE_G4, 30);
+            }
+            if (platform_dpad_down_pressed() && sysMenuSelection < 1) {
+                sysMenuSelection++;
+                platform_beep(NOTE_E4, 30);
+            }
+
+            // A button to adjust selected setting (cycles through values)
+            if (platform_button_pressed(BTN_A)) {
+                if (sysMenuSelection == 0) {
+                    // Cycle volume: 0 -> 25 -> 50 -> 75 -> 100 -> 0
+                    uint8_t vol = platform_get_volume();
+                    vol = (vol >= 100) ? 0 : vol + 25;
+                    platform_set_volume(vol);
+                    platform_beep(NOTE_E5, 50);
+                } else {
+                    // Cycle brightness: 20 -> 40 -> 60 -> 80 -> 100 -> 20
+                    uint8_t bri = platform_get_brightness();
+                    bri = (bri >= 100) ? 20 : bri + 20;
+                    platform_set_brightness(bri);
+                    platform_beep(NOTE_E5, 50);
+                }
+            }
         }
 
         if (platform_button_pressed(BTN_B)) {

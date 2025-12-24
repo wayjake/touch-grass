@@ -241,14 +241,23 @@ unsigned long platform_button_held_ms(PlatformButton btn) {
 }
 
 // ============================================================================
+// System Controls (declared early so sound functions can use volume)
+// ============================================================================
+
+static uint8_t _systemVolume = 80;      // 0-100
+static uint8_t _systemBrightness = 80;  // 0-100
+
+// ============================================================================
 // Sound
 // ============================================================================
 
 void platform_beep(int freq, int duration_ms) {
+    if (_systemVolume == 0) return;  // Muted
     tone(PIN_BUZZER_1, freq, duration_ms);
 }
 
 void platform_play_melody(const int* notes, const int* durations, int length) {
+    if (_systemVolume == 0) return;  // Muted
     for (int i = 0; i < length; i++) {
         int note = pgm_read_word(&notes[i]);
         int duration = pgm_read_word(&durations[i]);
@@ -317,6 +326,29 @@ void platform_led_set(uint8_t r, uint8_t g, uint8_t b) {
 void platform_led_off(void) {
     _rgbLed.clear();
     _rgbLed.show();
+}
+
+// ============================================================================
+// System Controls (implementation)
+// ============================================================================
+
+uint8_t platform_get_volume(void) {
+    return _systemVolume;
+}
+
+void platform_set_volume(uint8_t volume) {
+    _systemVolume = volume > 100 ? 100 : volume;
+}
+
+uint8_t platform_get_brightness(void) {
+    return _systemBrightness;
+}
+
+void platform_set_brightness(uint8_t brightness) {
+    _systemBrightness = brightness > 100 ? 100 : brightness;
+    // SH1106 supports contrast control (0-255)
+    uint8_t contrast = (brightness * 255) / 100;
+    _display.setContrast(contrast);
 }
 
 // ============================================================================

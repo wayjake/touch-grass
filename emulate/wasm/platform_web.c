@@ -496,13 +496,18 @@ unsigned long platform_button_held_ms(PlatformButton btn) {
 // Sound
 // ============================================================================
 
+// Forward declaration for volume check
+static uint8_t _systemVolume;
+
 void platform_beep(int freq, int duration_ms) {
+    if (_systemVolume == 0) return;  // Muted
     EM_ASM({
         if (window.playBeep) window.playBeep($0, $1);
     }, freq, duration_ms);
 }
 
 void platform_play_melody(const int* notes, const int* durations, int length) {
+    if (_systemVolume == 0) return;  // Muted
     // For web, we play melody non-blocking via JS
     // Convert to simple beeps with delays handled by JS
     EM_ASM({
@@ -554,4 +559,35 @@ void platform_delay(int ms) {
     // In web context, we don't block - this is a no-op
     // Game loop should use timing checks instead
     (void)ms;
+}
+
+// ============================================================================
+// System Controls
+// ============================================================================
+
+static uint8_t _systemVolume = 80;      // 0-100
+static uint8_t _systemBrightness = 80;  // 0-100
+
+uint8_t platform_get_volume(void) {
+    return _systemVolume;
+}
+
+void platform_set_volume(uint8_t volume) {
+    _systemVolume = volume > 100 ? 100 : volume;
+    // Update Web Audio gain
+    EM_ASM({
+        if (window.setVolume) window.setVolume($0 / 100.0);
+    }, _systemVolume);
+}
+
+uint8_t platform_get_brightness(void) {
+    return _systemBrightness;
+}
+
+void platform_set_brightness(uint8_t brightness) {
+    _systemBrightness = brightness > 100 ? 100 : brightness;
+    // Update canvas brightness via CSS filter
+    EM_ASM({
+        if (window.setBrightness) window.setBrightness($0 / 100.0);
+    }, _systemBrightness);
 }

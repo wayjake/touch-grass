@@ -169,6 +169,18 @@ void platform_led_set(uint8_t r, uint8_t g, uint8_t b);
 void platform_led_off(void);
 
 // ============================================================================
+// System Controls (volume, brightness)
+// ============================================================================
+
+// Get/set sound volume (0-100, 0 = muted)
+uint8_t platform_get_volume(void);
+void platform_set_volume(uint8_t volume);
+
+// Get/set display brightness (0-100)
+uint8_t platform_get_brightness(void);
+void platform_set_brightness(uint8_t brightness);
+
+// ============================================================================
 // Timing
 // ============================================================================
 
