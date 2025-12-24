@@ -122,6 +122,13 @@ bool isValidPosition(uint8_t x, uint8_t y) {
         return isShallowWater(x, y);
     }
 
+    // New biome tiles - all walkable
+    // Mountains are walkable (extra energy cost handled elsewhere)
+    // Snow and ice are walkable
+    if (tile == TG_MOUNTAIN || tile == TG_SNOW || tile == TG_ICE) {
+        return true;
+    }
+
     return true;
 }
 
@@ -194,10 +201,10 @@ void generateTerrain() {
         }
     }
 
-    // Step 5: Place one chest on a grass tile
+    // Step 5: Place one chest on a grass tile within visible viewport (columns 3-12)
     bool chestPlaced = false;
     for (int attempts = 0; attempts < 100 && !chestPlaced; attempts++) {
-        int cx = random(0, MAP_WIDTH);
+        int cx = random(3, 13);  // Visible viewport columns only
         int cy = random(0, MAP_HEIGHT);
         if (tg_map[cy][cx] == TG_GRASS) {
             tg_map[cy][cx] = TG_CHEST;
@@ -263,6 +270,9 @@ const char* getTileName(char tile) {
         case TG_BUILDING: return "Building";
         case TG_SHRUB:    return "Shrub";
         case TG_SEEDLING: return "Seedling";
+        case TG_MOUNTAIN: return "Mountain";
+        case TG_SNOW:     return "Snow";
+        case TG_ICE:      return "Ice";
         default:          return "Unknown";
     }
 }

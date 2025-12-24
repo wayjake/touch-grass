@@ -28,8 +28,91 @@ type GameModule = {
   _platform_get_framebuffer_size: () => number;
   _platform_set_button: (btn: number, pressed: number) => void;
   HEAPU8?: Uint8Array;
+  HEAP32?: Int32Array;
   wasmMemory?: WebAssembly.Memory;
 };
+
+// Web Audio context for sound
+let audioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (!audioContext) {
+    try {
+      audioContext = new AudioContext();
+    } catch {
+      console.warn("Web Audio not supported");
+      return null;
+    }
+  }
+  // Resume if suspended (autoplay policy)
+  if (audioContext.state === "suspended") {
+    audioContext.resume();
+  }
+  return audioContext;
+}
+
+// Play a simple beep tone with volume control (0-1)
+function playBeep(freq: number, durationMs: number, volume: number = 1.0) {
+  const ctx = getAudioContext();
+  if (!ctx || freq <= 0) return;
+
+  const oscillator = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+
+  oscillator.connect(gainNode);
+  gainNode.connect(ctx.destination);
+
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(freq, ctx.currentTime);
+
+  // Scale gain by volume (max 0.1 at full volume)
+  const gain = 0.1 * Math.max(0, Math.min(1, volume));
+  gainNode.gain.setValueAtTime(gain, ctx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
+
+  oscillator.start(ctx.currentTime);
+  oscillator.stop(ctx.currentTime + durationMs / 1000);
+}
+
+// Play a melody by reading note/duration arrays from WASM memory
+function playMelody(module: GameModule, notesPtr: number, durationsPtr: number, length: number, volume: number = 1.0) {
+  const ctx = getAudioContext();
+  if (!ctx || !module.HEAP32) return;
+
+  // Read int arrays from WASM memory (4 bytes per int)
+  const notes: number[] = [];
+  const durations: number[] = [];
+  for (let i = 0; i < length; i++) {
+    notes.push(module.HEAP32[(notesPtr >> 2) + i]);
+    durations.push(module.HEAP32[(durationsPtr >> 2) + i]);
+  }
+
+  // Scale gain by volume (max 0.1 at full volume)
+  const gainValue = 0.1 * Math.max(0, Math.min(1, volume));
+
+  // Schedule notes sequentially
+  let time = ctx.currentTime;
+  for (let i = 0; i < length; i++) {
+    const freq = notes[i];
+    const dur = durations[i] / 1000;
+
+    if (freq > 0) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = "square";
+      osc.frequency.setValueAtTime(freq, time);
+      gain.gain.setValueAtTime(gainValue, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+      osc.start(time);
+      osc.stop(time + dur);
+    }
+    time += dur;
+  }
+}
 
 export default function Play() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -112,12 +195,18 @@ export default function Play() {
 
       moduleRef.current = module;
 
+      // Register sound functions on window for WASM to call
+      (window as unknown as { playBeep: typeof playBeep }).playBeep = playBeep;
+      (window as unknown as { playMelody: (n: number, d: number, l: number, v: number) => void }).playMelody =
+        (notesPtr: number, durationsPtr: number, length: number, volume: number) => {
+          playMelody(module, notesPtr, durationsPtr, length, volume);
+        };
+      (window as unknown as { stopMelody: () => void }).stopMelody = () => {
+        // No-op for now, melodies are fire-and-forget
+      };
+
       // Initialize game
       module._game_init();
-
-      // Debug: check module state
-      console.log("Module keys:", Object.keys(module));
-      console.log("Module:", module);
 
       // Start game loop
       animationRef.current = requestAnimationFrame(gameLoop);
@@ -147,6 +236,9 @@ export default function Play() {
     };
 
     function handleKeyDown(e: KeyboardEvent) {
+      // Resume audio context on first interaction (browser autoplay policy)
+      getAudioContext();
+
       const btn = keyMap[e.code];
       if (btn !== undefined && moduleRef.current) {
         e.preventDefault();

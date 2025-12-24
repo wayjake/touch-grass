@@ -16,6 +16,10 @@
 #include "t9_dict.h"
 #include "t9_input.h"
 #include "save.h"
+#include "progression.h"
+#include "dialog.h"
+#include "creatures.h"
+#include "chunks.h"
 
 // Note frequencies
 #define NOTE_C4   262
@@ -51,7 +55,10 @@ enum GameState {
     STATE_T9_INPUT,          // T9 text entry for naming saves
     STATE_CONFIRM_OVERWRITE, // Confirm overwriting existing save
     STATE_SAVE_SUCCESS,      // Save complete confirmation
-    STATE_LOAD_CONFIRM       // Confirm before loading (loses progress)
+    STATE_LOAD_CONFIRM,      // Confirm before loading (loses progress)
+    // Progression states
+    STATE_DIALOG,            // Dialog overlay active
+    STATE_FOV_ANIMATION      // FOV unlock blink animation
 };
 
 // Game state variables
@@ -59,7 +66,8 @@ static GameState gameState = STATE_SPLASH;
 static uint8_t menuSelection = 0;
 static uint8_t inventoryScroll = 0;
 static ItemType selectedItem = ITEM_NONE;
-static uint8_t inventoryTab = 0;  // 0 = Inventory, 1 = Status
+static uint8_t inventoryTab = 0;  // 0 = Inventory, 1 = Status, 2 = System
+static uint8_t sysMenuSelection = 0;  // 0 = Volume, 1 = Brightness
 static char interactingFurniture = TG_FLOOR;  // Currently interacting furniture
 
 // Save/Load state variables
@@ -72,6 +80,17 @@ static GameState returnAfterT9 = STATE_BUILDING;  // Where to return after T9 in
 static uint8_t chestAnimFrame = 0;
 static unsigned long chestAnimTime = 0;
 static const unsigned long CHEST_ANIM_DELAY = 300;  // ms between frames
+
+// FOV unlock animation state
+static uint8_t fovAnimFrame = 0;
+static unsigned long fovAnimTime = 0;
+static const unsigned long FOV_BLINK_DELAY = 150;   // ms between blinks
+static const uint8_t FOV_BLINK_COUNT = 6;           // 3 full on/off cycles
+
+// Viewport restriction constants
+#define VIEWPORT_HIDDEN_COLS 3    // Columns hidden on each side initially
+#define VIEWPORT_VISIBLE_START 3  // First visible column (0-indexed)
+#define VIEWPORT_VISIBLE_END 13   // Last visible column (exclusive)
 
 // Movement timing
 static unsigned long lastMoveTime = 0;
@@ -108,6 +127,30 @@ static bool isPartOfCompleteBuilding(int x, int y) {
            isComplete2x2At(x-1, y-1);
 }
 
+// Check if a position is within the visible viewport
+static bool isWithinViewport(int x, int y) {
+    // If FOV is unlocked, full map is visible
+    if (progression.fovUnlocked) {
+        return x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT;
+    }
+    // Otherwise, only columns 3-12 are accessible
+    return x >= VIEWPORT_VISIBLE_START && x < VIEWPORT_VISIBLE_END &&
+           y >= 0 && y < MAP_HEIGHT;
+}
+
+// Move player with viewport bounds checking
+static bool movePlayerBounded(int8_t dx, int8_t dy) {
+    int newX = tg_playerX + dx;
+    int newY = tg_playerY + dy;
+
+    // Check viewport bounds first (before terrain checks)
+    if (!isWithinViewport(newX, newY)) {
+        return false;
+    }
+
+    return movePlayer(dx, dy);
+}
+
 // Check if position is the top-left corner of a complete 2x2 building
 static bool isBuildingTopLeft(int x, int y) {
     if (tg_map[y][x] != TG_BUILDING) return false;
@@ -117,10 +160,69 @@ static bool isBuildingTopLeft(int x, int y) {
     return topClear && leftClear;
 }
 
+// Check if player is standing on any tile of the complete 2x2 building at (topLeftX, topLeftY)
+static bool isPlayerOnBuilding2x2(int topLeftX, int topLeftY) {
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
+            if ((int)tg_playerX == topLeftX + dx && (int)tg_playerY == topLeftY + dy) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Check if position is part of a building but NOT top-left
 static bool isBuildingNonOrigin(int x, int y) {
     if (tg_map[y][x] != TG_BUILDING) return false;
     return !isBuildingTopLeft(x, y);
+}
+
+// Find the top-left corner of the building the player is in
+static void findBuildingTopLeft(int startX, int startY, int* outX, int* outY) {
+    *outX = startX;
+    *outY = startY;
+    // Check all 4 positions
+    if (isComplete2x2At(startX, startY)) { *outX = startX; *outY = startY; return; }
+    if (startX > 0 && isComplete2x2At(startX-1, startY)) { *outX = startX-1; *outY = startY; return; }
+    if (startY > 0 && isComplete2x2At(startX, startY-1)) { *outX = startX; *outY = startY-1; return; }
+    if (startX > 0 && startY > 0 && isComplete2x2At(startX-1, startY-1)) { *outX = startX-1; *outY = startY-1; return; }
+}
+
+// Spawn the spirit near the player's home
+static void spawnSpirit() {
+    // Find the building top-left
+    int homeX, homeY;
+    findBuildingTopLeft(progression.homeLocalX, progression.homeLocalY, &homeX, &homeY);
+
+    // Spirit spawns at bottom-right corner adjacent to building (outside)
+    // Building is 2x2 at (homeX, homeY), so bottom-right of building is (homeX+1, homeY+1)
+    // Try to spawn at (homeX+2, homeY+1) first, then (homeX+1, homeY+2)
+
+    int spiritX = homeX + 2;
+    int spiritY = homeY + 1;
+
+    // Check bounds and if position is valid
+    if (spiritX >= MAP_WIDTH || !isValidPosition(spiritX, spiritY)) {
+        spiritX = homeX + 1;
+        spiritY = homeY + 2;
+    }
+
+    // Check if valid
+    if (spiritY < MAP_HEIGHT && isValidPosition(spiritX, spiritY)) {
+        progression.spiritSpawned = true;
+        progression.spiritX = spiritX;
+        progression.spiritY = spiritY;
+    }
+}
+
+// Check if player is adjacent to the spirit
+static bool isPlayerAdjacentToSpirit() {
+    if (!progression.spiritSpawned || progression.spiritDialogComplete) return false;
+    int dx = abs((int)tg_playerX - progression.spiritX);
+    int dy = abs((int)tg_playerY - progression.spiritY);
+    // Adjacent means Manhattan distance of 1 (not diagonal)
+    return (dx + dy == 1);
 }
 
 static bool processAction() {
@@ -132,6 +234,57 @@ static bool processAction() {
         growSeedlings();
     }
     return false;
+}
+
+// Transition to a new chunk when player crosses edge
+// direction: -1 = left, 1 = right (only horizontal scrolling for now)
+static void transitionChunk(int8_t direction) {
+    // Save current chunk's terrain back to cache (in case player modified it)
+    Chunk* currentChunk = getOrCreateChunk(playerChunkX, playerChunkY, progression.homeChunkX);
+    if (currentChunk) {
+        for (int y = 0; y < MAP_HEIGHT; y++) {
+            for (int x = 0; x < MAP_WIDTH; x++) {
+                currentChunk->terrain[y][x] = tg_map[y][x];
+            }
+        }
+        currentChunk->modified = true;
+    }
+
+    // Update chunk coordinates
+    playerChunkX += direction;
+
+    // Load new chunk
+    Chunk* newChunk = getOrCreateChunk(playerChunkX, playerChunkY, progression.homeChunkX);
+    if (newChunk) {
+        // Copy new chunk terrain to active map
+        for (int y = 0; y < MAP_HEIGHT; y++) {
+            for (int x = 0; x < MAP_WIDTH; x++) {
+                tg_map[y][x] = newChunk->terrain[y][x];
+            }
+        }
+    }
+
+    // Move player to opposite edge
+    if (direction < 0) {
+        tg_playerX = MAP_WIDTH - 1;  // Entering from right
+    } else {
+        tg_playerX = 0;  // Entering from left
+    }
+
+    // Update what's under the player
+    tg_underPlayer = tg_map[tg_playerY][tg_playerX];
+
+    // Calculate distance from home for creature spawning
+    int16_t distance = (playerChunkX >= progression.homeChunkX)
+        ? (playerChunkX - progression.homeChunkX)
+        : (progression.homeChunkX - playerChunkX);
+
+    // Get biome and spawn creatures
+    BiomeType biome = getBiomeForChunk(playerChunkX, progression.homeChunkX);
+    spawnCreatures((uint8_t)biome, (uint16_t)distance);
+
+    platform_beep(NOTE_G4, 50);
+    platform_beep(NOTE_C5, 50);
 }
 
 static uint8_t getTileActions(char tile, const char** actionNames) {
@@ -272,6 +425,18 @@ static bool executeTileAction(char tile, uint8_t action) {
             setTileUnderPlayer(TG_BUILDING);
             platform_beep(NOTE_G4, 50);
             platform_beep(NOTE_C5, 50);
+
+            // Check if this completed a 2x2 building (first time only)
+            if (!progression.hasBuiltHouse && isPartOfCompleteBuilding(tg_playerX, tg_playerY)) {
+                progression.hasBuiltHouse = true;
+                // Record home location
+                progression.homeChunkX = 0;
+                progression.homeChunkY = 0;
+                progression.homeLocalX = tg_playerX;
+                progression.homeLocalY = tg_playerY;
+                platform_beep(NOTE_G5, 100);
+            }
+
             processAction();
             gameState = STATE_WORLD;
             return true;
@@ -309,6 +474,11 @@ static bool executeTileAction(char tile, uint8_t action) {
         gameState = STATE_BUILDING;
         platform_beep(NOTE_C5, 50);
         platform_beep(NOTE_E5, 50);
+
+        // Track first time entering the house
+        if (progression.hasBuiltHouse && !progression.hasEnteredHouse) {
+            progression.hasEnteredHouse = true;
+        }
         return true;
     }
 
@@ -348,6 +518,19 @@ static uint8_t getItemActions(ItemType item, const char** actionNames) {
         case ITEM_WOOD:
         case ITEM_HAMMER:
         case ITEM_AXE:
+            actionNames[0] = "Drop";
+            return 1;
+        case ITEM_LASSO:
+            // Check if adjacent to a creature
+            if (hasCreatureCaught()) {
+                actionNames[0] = "Release";
+                actionNames[1] = "Drop";
+                return 2;
+            } else if (getAdjacentCreature(tg_playerX, tg_playerY) >= 0) {
+                actionNames[0] = "Catch";
+                actionNames[1] = "Drop";
+                return 2;
+            }
             actionNames[0] = "Drop";
             return 1;
         default:
@@ -397,6 +580,24 @@ static bool executeItemAction(ItemType item, uint8_t action) {
             platform_beep(NOTE_C5, 50);
             processAction();
         }
+        return true;
+    }
+
+    // Lasso actions
+    if (item == ITEM_LASSO && strcmp(actionName, "Catch") == 0) {
+        int8_t creatureIdx = getAdjacentCreature(tg_playerX, tg_playerY);
+        if (creatureIdx >= 0 && catchCreature(creatureIdx)) {
+            platform_beep(NOTE_G5, 100);
+            platform_beep(NOTE_C5, 100);
+            processAction();
+        }
+        return true;
+    }
+
+    if (item == ITEM_LASSO && strcmp(actionName, "Release") == 0) {
+        releaseCreature();
+        platform_beep(NOTE_E4, 100);
+        processAction();
         return true;
     }
 
@@ -495,6 +696,12 @@ static bool executeFurnitureAction(char furniture, uint8_t action) {
     if (furniture == TG_DOOR && strcmp(actionName, "Exit") == 0) {
         gameState = STATE_WORLD;
         platform_beep(NOTE_C5, 50);
+
+        // Spawn spirit on first exit after entering the house
+        if (progression.hasEnteredHouse && !progression.hasExitedHouse) {
+            progression.hasExitedHouse = true;
+            spawnSpirit();
+        }
         return true;
     }
 
@@ -587,28 +794,100 @@ static void drawMainMenu() {
 static void drawWorldMap() {
     platform_set_text_size(1);
 
+    // Determine visible column range based on FOV unlock status
+    int startCol = 0;
+    int endCol = MAP_WIDTH;
+
+    if (!progression.fovUnlocked) {
+        startCol = VIEWPORT_VISIBLE_START;  // 3
+        endCol = VIEWPORT_VISIBLE_END;      // 13
+    }
+
     for (int y = 0; y < MAP_HEIGHT; y++) {
         for (int x = 0; x < MAP_WIDTH; x++) {
+            // Skip hidden columns (renders as black since screen is cleared)
+            if (x < startCol || x >= endCol) {
+                continue;
+            }
+
             char tile = tg_map[y][x];
+            bool isPlayerHere = (x == tg_playerX && y == tg_playerY);
 
-            if (x == tg_playerX && y == tg_playerY) {
-                platform_draw_tile(x, y, TILE_CHAR);
+            // Handle complete 2x2 buildings specially
+            if (tile == TG_BUILDING && isPartOfCompleteBuilding(x, y)) {
+                // Find the top-left of this building
+                int topLeftX = x, topLeftY = y;
+                if (isComplete2x2At(x, y)) {
+                    topLeftX = x; topLeftY = y;
+                } else if (x > 0 && isComplete2x2At(x-1, y)) {
+                    topLeftX = x - 1; topLeftY = y;
+                } else if (y > 0 && isComplete2x2At(x, y-1)) {
+                    topLeftX = x; topLeftY = y - 1;
+                } else if (x > 0 && y > 0 && isComplete2x2At(x-1, y-1)) {
+                    topLeftX = x - 1; topLeftY = y - 1;
+                }
+
+                // Check if player is on any tile of this building
+                if (isPlayerOnBuilding2x2(topLeftX, topLeftY)) {
+                    // Player is on building - draw individual 8x8 tiles
+                    if (isPlayerHere) {
+                        platform_draw_tile(x, y, TILE_CHAR);
+                    } else {
+                        platform_draw_tile(x, y, TILE_BUILDING);
+                    }
+                } else {
+                    // Player not on building - draw 16x16 cabin from top-left only
+                    if (isBuildingTopLeft(x, y)) {
+                        drawTile16(x * PLATFORM_TILE_SIZE, y * PLATFORM_TILE_SIZE, TILE_CABIN_16);
+                    }
+                    // Non-top-left tiles are covered by the 16x16 sprite
+                }
                 continue;
             }
 
-            if (isBuildingNonOrigin(x, y)) {
-                continue;
-            }
-
+            // Draw non-building tile content
             if (tile == TG_CHEST) {
-                platform_draw_tile(x, y, TILE_CHEST);
-            } else if (isBuildingTopLeft(x, y)) {
-                drawTile16(x * PLATFORM_TILE_SIZE, y * PLATFORM_TILE_SIZE, TILE_CABIN_16);
+                if (!isPlayerHere) {
+                    platform_draw_tile(x, y, TILE_CHEST);
+                }
             } else if (tile == TG_BUILDING) {
-                platform_draw_tile(x, y, TILE_BUILDING);
-            } else {
+                // Single building tile (not part of complete 2x2)
+                if (!isPlayerHere) {
+                    platform_draw_tile(x, y, TILE_BUILDING);
+                }
+            } else if (!isPlayerHere) {
+                // Only draw regular tile letter if player isn't here
                 platform_set_cursor(x * PLATFORM_TILE_SIZE, y * PLATFORM_TILE_SIZE);
                 platform_print_char(tile);
+            }
+
+            // Draw player on their tile
+            if (isPlayerHere) {
+                platform_draw_tile(x, y, TILE_CHAR);
+            }
+        }
+    }
+
+    // Draw spirit if spawned and visible (and not yet talked to)
+    if (progression.spiritSpawned && !progression.spiritDialogComplete) {
+        int sx = progression.spiritX;
+        int sy = progression.spiritY;
+        // Only draw if within visible viewport
+        if (sx >= startCol && sx < endCol && sy >= 0 && sy < MAP_HEIGHT) {
+            platform_draw_tile(sx, sy, TILE_SPIRIT);
+        }
+    }
+
+    // Draw creatures
+    for (int i = 0; i < creatureCount; i++) {
+        if (creatures[i].alive) {
+            int cx = creatures[i].x;
+            int cy = creatures[i].y;
+            // Only draw if within visible viewport
+            if (cx >= startCol && cx < endCol && cy >= 0 && cy < MAP_HEIGHT) {
+                char tileChar = getCreatureTileChar(creatures[i].type);
+                const uint8_t* sprite = getTileSprite(tileChar);
+                platform_draw_tile(cx, cy, sprite);
             }
         }
     }
@@ -723,7 +1002,9 @@ static void drawInventoryScreen() {
     platform_set_cursor(0, 0);
     platform_print("[Inv]");
     platform_set_cursor(40, 0);
-    platform_print("  Status");
+    platform_print(" Stat");
+    platform_set_cursor(80, 0);
+    platform_print(" Sys");
     platform_draw_line(0, 10, 127, 10, true);
 
     uint8_t filledSlots = countFilledSlots();
@@ -773,9 +1054,11 @@ static void drawStatusScreen() {
     platform_set_text_size(1);
 
     platform_set_cursor(0, 0);
-    platform_print("  Inv");
+    platform_print(" Inv");
     platform_set_cursor(40, 0);
-    platform_print("[Status]");
+    platform_print("[Stat]");
+    platform_set_cursor(80, 0);
+    platform_print(" Sys");
     platform_draw_line(0, 10, 127, 10, true);
 
     platform_set_cursor(0, 16);
@@ -797,6 +1080,57 @@ static void drawStatusScreen() {
 
     platform_set_cursor(0, 56);
     platform_print("</>:Tab B:Back");
+}
+
+static void drawSystemScreen() {
+    platform_set_text_size(1);
+
+    platform_set_cursor(0, 0);
+    platform_print(" Inv");
+    platform_set_cursor(40, 0);
+    platform_print(" Stat");
+    platform_set_cursor(80, 0);
+    platform_print("[Sys]");
+    platform_draw_line(0, 10, 127, 10, true);
+
+    // Volume control
+    uint8_t volume = platform_get_volume();
+    platform_set_cursor(0, 18);
+    if (sysMenuSelection == 0) {
+        platform_print(">");
+    } else {
+        platform_print(" ");
+    }
+    platform_print("Volume: ");
+    platform_print_int(volume);
+    platform_print("%");
+    // Draw volume bar
+    platform_draw_rect(10, 30, 100, 8, true);
+    int volFill = (volume * 96) / 100;
+    if (volFill > 0) {
+        platform_fill_rect(12, 32, volFill, 4, true);
+    }
+
+    // Brightness control
+    uint8_t brightness = platform_get_brightness();
+    platform_set_cursor(0, 42);
+    if (sysMenuSelection == 1) {
+        platform_print(">");
+    } else {
+        platform_print(" ");
+    }
+    platform_print("Bright: ");
+    platform_print_int(brightness);
+    platform_print("%");
+    // Draw brightness bar
+    platform_draw_rect(10, 54, 100, 8, true);
+    int briFill = (brightness * 96) / 100;
+    if (briFill > 0) {
+        platform_fill_rect(12, 56, briFill, 4, true);
+    }
+
+    platform_set_cursor(0, 56);
+    platform_print("</>:Tab ^v:Sel A:Adj");
 }
 
 static void drawItemView() {
@@ -1174,7 +1508,14 @@ inline void game_loop() {
             const char* option = getMainMenuOption(menuSelection);
             if (strcmp(option, "NEW GAME") == 0) {
                 initInventory();
+                initProgression();
+                initCreatures();
                 generateTerrain();
+                // Initialize chunk system and save starting terrain as chunk (0,0)
+                initChunkSystem(platform_millis() ^ 12345);
+                setInitialChunk(tg_map);
+                // Spawn some creatures in the starting area (temperate biome)
+                spawnCreatures(0, 0);  // biome=temperate, distance=0
                 gameState = STATE_WORLD;
                 platform_play_melody(startupMelody, startupDurations, STARTUP_LEN);
             } else if (strcmp(option, "CONTINUE") == 0) {
@@ -1206,20 +1547,62 @@ inline void game_loop() {
 
         if (currentTime - lastMoveTime >= MOVE_DELAY) {
             bool moved = false;
+            bool changedChunk = false;
+
+            // Save previous position for caught creature following
+            uint8_t prevX = tg_playerX;
+            uint8_t prevY = tg_playerY;
 
             if (platform_dpad_up()) {
-                moved = movePlayer(0, -1);
+                moved = movePlayerBounded(0, -1);
             } else if (platform_dpad_down()) {
-                moved = movePlayer(0, 1);
+                moved = movePlayerBounded(0, 1);
             } else if (platform_dpad_left()) {
-                moved = movePlayer(-1, 0);
+                moved = movePlayerBounded(-1, 0);
+                // Check for chunk transition (only when FOV unlocked)
+                if (!moved && progression.fovUnlocked && tg_playerX == 0) {
+                    transitionChunk(-1);  // Move to chunk on the left
+                    moved = true;
+                    changedChunk = true;
+                }
             } else if (platform_dpad_right()) {
-                moved = movePlayer(1, 0);
+                moved = movePlayerBounded(1, 0);
+                // Check for chunk transition (only when FOV unlocked)
+                if (!moved && progression.fovUnlocked && tg_playerX == MAP_WIDTH - 1) {
+                    transitionChunk(1);  // Move to chunk on the right
+                    moved = true;
+                    changedChunk = true;
+                }
             }
 
             if (moved) {
-                platform_beep(NOTE_C5, 20);
+                if (!changedChunk) {
+                    platform_beep(NOTE_C5, 20);
+                }
                 lastMoveTime = currentTime;
+
+                // Update caught creature to follow player (release if changed chunk)
+                if (hasCreatureCaught()) {
+                    if (changedChunk) {
+                        releaseCreature();  // Can't bring creatures across chunks
+                    } else {
+                        updateCaughtCreature(prevX, prevY);
+                    }
+                }
+
+                // Update all creatures (AI movement and attacks)
+                uint8_t creatureDamage = updateCreatures(tg_playerX, tg_playerY);
+                if (creatureDamage > 0) {
+                    // Apply creature attack damage to hunger
+                    if (playerHunger > creatureDamage) {
+                        playerHunger -= creatureDamage;
+                    } else {
+                        playerHunger = 0;
+                    }
+                    platform_beep(NOTE_C4, 100);
+                    platform_beep(NOTE_E4, 100);
+                }
+
                 if (decrementHunger()) {
                     deathReason = DEATH_STARVED;
                 }
@@ -1230,9 +1613,16 @@ inline void game_loop() {
         }
 
         if (platform_button_pressed(BTN_A)) {
-            gameState = STATE_TILE_VIEW;
-            menuSelection = 0;
-            platform_beep(NOTE_E5, 50);
+            // Check if adjacent to spirit - start dialog instead
+            if (isPlayerAdjacentToSpirit()) {
+                startSpiritDialog();
+                gameState = STATE_DIALOG;
+                platform_beep(NOTE_G5, 80);
+            } else {
+                gameState = STATE_TILE_VIEW;
+                menuSelection = 0;
+                platform_beep(NOTE_E5, 50);
+            }
         }
 
         if (platform_button_pressed(BTN_B)) {
@@ -1274,9 +1664,10 @@ inline void game_loop() {
             inventoryScroll = 0;
             platform_beep(NOTE_C5, 30);
         }
-        if (platform_dpad_right_pressed() && inventoryTab < 1) {
+        if (platform_dpad_right_pressed() && inventoryTab < 2) {
             inventoryTab++;
             menuSelection = 0;
+            sysMenuSelection = 0;
             platform_beep(NOTE_C5, 30);
         }
 
@@ -1311,8 +1702,37 @@ inline void game_loop() {
                     }
                 }
             }
-        } else {
+        } else if (inventoryTab == 1) {
             drawStatusScreen();
+        } else if (inventoryTab == 2) {
+            drawSystemScreen();
+
+            // Up/down to select volume or brightness
+            if (platform_dpad_up_pressed() && sysMenuSelection > 0) {
+                sysMenuSelection--;
+                platform_beep(NOTE_G4, 30);
+            }
+            if (platform_dpad_down_pressed() && sysMenuSelection < 1) {
+                sysMenuSelection++;
+                platform_beep(NOTE_E4, 30);
+            }
+
+            // A button to adjust selected setting (cycles through values)
+            if (platform_button_pressed(BTN_A)) {
+                if (sysMenuSelection == 0) {
+                    // Cycle volume: 0 -> 25 -> 50 -> 75 -> 100 -> 0
+                    uint8_t vol = platform_get_volume();
+                    vol = (vol >= 100) ? 0 : vol + 25;
+                    platform_set_volume(vol);
+                    platform_beep(NOTE_E5, 50);
+                } else {
+                    // Cycle brightness: 20 -> 40 -> 60 -> 80 -> 100 -> 20
+                    uint8_t bri = platform_get_brightness();
+                    bri = (bri >= 100) ? 20 : bri + 20;
+                    platform_set_brightness(bri);
+                    platform_beep(NOTE_E5, 50);
+                }
+            }
         }
 
         if (platform_button_pressed(BTN_B)) {
@@ -1468,6 +1888,7 @@ inline void game_loop() {
                 addItem(ITEM_SEED, 3);
                 addItem(ITEM_HAMMER);
                 addItem(ITEM_AXE);
+                addItem(ITEM_LASSO);
                 setTileUnderPlayer(TG_DIRT);
                 processAction();
                 gameState = STATE_CHEST_OBTAINED;
@@ -1622,6 +2043,52 @@ inline void game_loop() {
             gameState = STATE_BUILDING;
             menuSelection = 0;
             platform_beep(NOTE_C5, 50);
+        }
+
+    } else if (gameState == STATE_DIALOG) {
+        // Draw the world behind the dialog
+        drawWorldMap();
+        // Draw dialog overlay
+        drawDialog();
+
+        if (platform_button_pressed(BTN_A)) {
+            platform_beep(NOTE_E5, 30);
+            if (advanceDialog()) {
+                // Dialog complete - check if this was the spirit dialog
+                if (progression.spiritSpawned && !progression.spiritDialogComplete) {
+                    progression.spiritDialogComplete = true;
+                    // Start FOV unlock animation
+                    fovAnimFrame = 0;
+                    fovAnimTime = currentTime;
+                    gameState = STATE_FOV_ANIMATION;
+                } else {
+                    gameState = STATE_WORLD;
+                }
+            }
+        }
+
+    } else if (gameState == STATE_FOV_ANIMATION) {
+        // Blink the hidden columns in and out
+        bool showFullFov = (fovAnimFrame % 2) == 1;
+
+        // Temporarily set fovUnlocked for drawing
+        bool originalFov = progression.fovUnlocked;
+        progression.fovUnlocked = showFullFov;
+        drawWorldMap();
+        progression.fovUnlocked = originalFov;
+
+        // Update animation
+        if (currentTime - fovAnimTime >= FOV_BLINK_DELAY) {
+            fovAnimFrame++;
+            fovAnimTime = currentTime;
+
+            if (fovAnimFrame >= FOV_BLINK_COUNT) {
+                // Animation complete - unlock FOV permanently
+                progression.fovUnlocked = true;
+                progression.fovAnimationDone = true;
+                gameState = STATE_WORLD;
+                platform_play_melody(startupMelody, startupDurations, STARTUP_LEN);
+            }
         }
     }
 
