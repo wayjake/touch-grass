@@ -1,4 +1,0 @@
-[wokwi]
-version = 1
-firmware = "build/touch-grass.ino.bin"
-elf = "build/touch-grass.ino.elf"

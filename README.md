@@ -1,55 +1,40 @@
 # TouchGrass
 
-A tile-based exploration game for ESP32-S3 with SH1106 OLED display.
+A tile-based exploration game that runs right in your terminal.
 
 ![Early Prototype](early-prototype.png)
 
-## Hardware Requirements
+Explore a procedurally generated world, gather resources, build, cook, catch
+creatures, and try to survive. The whole game renders on a 128x64 monochrome
+framebuffer drawn with Unicode half-block characters.
 
-- ESP32-S3 microcontroller
-- SH1106 128x64 OLED display (I2C)
-- 6-button D-pad (UP/DOWN/LEFT/RIGHT) + A/B buttons
-- Dual buzzers for audio
-- WS2812B RGB LED
+## Requirements
 
-### Pin Configuration
+- macOS or Linux
+- A C compiler (clang or gcc)
+- A terminal at least 128x33 characters
 
-| Component | GPIO |
-|-----------|------|
-| D-pad UP/DOWN/LEFT/RIGHT | 38/35/36/37 |
-| Button A/B | 19/20 |
-| Buzzers | 5, 40 |
-| RGB LED | 1 |
-| OLED SDA/SCL | 41/42 |
-
-## Build
-
-Requires [arduino-cli](https://arduino.github.io/arduino-cli/) with ESP32 board support.
+## Build & Run
 
 ```bash
-# Build firmware (outputs to build/)
-arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir build TouchGrass.ino
-
-# Watch for changes and auto-rebuild
-./watch.sh
+./build.sh
+./touch-grass
 ```
 
-## Simulator
+## Controls
 
-Run in the [Wokwi](https://wokwi.com/) simulator:
+| Key | Action |
+|-----|--------|
+| Arrow keys / WASD | Move |
+| Z / Space / Enter | A button (interact/select) |
+| X / Esc | B button (back/cancel) |
+| Q / Ctrl+C | Quit |
 
-```bash
-wokwi-cli .
-```
-
-## Game Controls
-
-- **D-pad**: Move player around the world
-- **A button**: Interact/Select
-- **B button**: Back/Cancel
+Saves are stored in `~/.touchgrass/saves/` (6 slots).
 
 ## Project Structure
 
-- `TouchGrass.ino` - Main game loop and state machine
-- `shared/` - Hardware abstraction, graphics, and sound utilities
-- `touch_grass/` - Game-specific terrain generation and sprites
+- `src/main.c` - Entry point and fixed-timestep game loop
+- `src/platform.h` - Platform API (display, input, sound, timing)
+- `src/platform_terminal.c` - Terminal implementation (ANSI rendering, termios input)
+- `src/game/` - Game logic: state machine, terrain generation, inventory, buildings, creatures, dialog, T9 text input, saves

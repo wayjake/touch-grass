@@ -10,103 +10,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 ```bash
-# Build firmware (outputs to build/)
+# Build (outputs ./touch-grass)
 ./build.sh
 
-# Watch for changes and auto-rebuild (requires inotifywait)
-./watch.sh
-
-# Flash to ESP32-S3 device
-./flash.sh
-
-# Run in Wokwi simulator
-wokwi-cli .
-```
-
-## Native Build (Mac/Linux)
-
-The game can run as a native terminal executable with no dependencies beyond a C/C++ compiler:
-
-```bash
-# Build (outputs native/touch-grass)
-cd native && ./build.sh
-
 # Run in a terminal at least 128x33 characters
-./native/touch-grass
+./touch-grass
 ```
 
 **Controls:** Arrow keys or WASD (move), Z/Space/Enter (A button), X/Esc (B button), Q (quit)
 
-### Native Architecture
-
-- `native/platform_native.c` - POSIX terminal platform implementation (ANSI half-block rendering of the 128x64 framebuffer, termios raw-mode input, monotonic clock timing; sound is a no-op)
-- `native/game_native.cpp` - Entry point with ~30 FPS fixed-timestep loop
-- `native/Arduino.h` - Arduino API shim for the shared game headers
-- Saves are written to `~/.touchgrass/saves/` (the `PLATFORM_NATIVE` branch in `touch_grass/save.h`)
-- Terminal key input has no key-up events, so a button counts as "held" for 150ms after its last key event (key repeat keeps it held)
-
-## Web Emulation
-
-The game can run in a browser using WebAssembly:
-
-```bash
-# Build WASM (requires Emscripten SDK)
-cd emulate/wasm && ./build.sh
-
-# Install dependencies and run dev server
-cd emulate && npm install && npm run dev
-```
-
-The emulator is available at `http://localhost:5173/play`.
-
-**Controls:** Arrow keys (move), Z/Space (A button), X/Esc (B button)
-
-### Emulator Architecture
-
-- `emulate/` - React Router app with Tailwind CSS
-- `emulate/wasm/` - WASM build files
-  - `platform_web.c` - Web platform implementation
-  - `game_web.cpp` - Game wrapper for WASM
-  - `build.sh` - Emscripten build script (outputs to `emulate/public/wasm/`)
-- `emulate/app/routes/play.tsx` - Game canvas and input handling
-
 ## Architecture
 
-TouchGrass is a tile-based exploration game for ESP32-S3 with SH1106 OLED display.
+TouchGrass is a tile-based exploration game for the terminal, written in C11
+with no dependencies beyond a C compiler and POSIX. The game renders a 128x64
+monochrome framebuffer as Unicode half-block characters (2 pixels per cell,
+so a 128x32 character display).
 
 ### File Structure
 
-- `touch-grass.ino` - Main game loop, state machine (STATE_WORLD, STATE_TILE_VIEW), input handling
-- `shared/platform.h` - Platform abstraction API (display, input, sound, timing)
-- `shared/platform_esp32.h` - ESP32 implementation of platform API
-- `shared/config.h` - Hardware pin definitions and display constants (legacy)
-- `shared/hardware.h` - Hardware abstraction (legacy, wrapped by platform_esp32.h)
-- `shared/graphics.h` - Sprite rendering utilities (legacy, wrapped by platform_esp32.h)
-- `shared/sound.h` - Audio utilities (legacy, wrapped by platform_esp32.h)
-- `touch_grass/terrain.h` - Map generation (procedural rivers, dirt patches), player movement, tile state
-- `touch_grass/sprites.h` - 8x8 tile sprites (TILE_GRASS, TILE_WATER, TILE_DIRT, TILE_CHAR) and tile type constants
-
-### Hardware Configuration
-
-| Component | GPIO |
-|-----------|------|
-| D-pad (UP/DOWN/LEFT/RIGHT) | 38/35/36/37 |
-| Buttons A/B | 19/20 |
-| Buzzers | 5, 40 |
-| RGB LED (WS2812B) | 1 |
-| OLED I2C | SDA:41, SCL:42 |
+- `src/main.c` - Entry point; fixed-timestep loop (~30 FPS) calling `game_setup()` / `game_loop()`
+- `src/platform.h` - Platform API (display, input, sound, timing, quit)
+- `src/platform_terminal.c` - Terminal implementation: ANSI half-block rendering, termios raw-mode input, monotonic clock; sound is a no-op
+- `src/game/game.h` - Game state machine, rendering, and input handling
+- `src/game/config.h` - Game constants (map size, hunger, growth timers)
+- `src/game/terrain.h` - Procedural map generation (rivers, dirt patches, trees), player movement
+- `src/game/sprites.h` - 8x8 tile sprites and tile type constants
+- `src/game/inventory.h` - Item types and 12-slot inventory
+- `src/game/building.h` - Building interiors (stove, chest, computer)
+- `src/game/creatures.h`, `src/game/chunks.h`, `src/game/progression.h`, `src/game/dialog.h` - Creatures, world chunks, progression flags, dialog overlay
+- `src/game/save.h` - Save system: 6 slots as binary files in `~/.touchgrass/saves/`
+- `src/game/t9_dict.h`, `src/game/t9_input.h` - T9 text entry for save names
 
 ### Game State
 
-The game uses a simple state machine:
-- `STATE_WORLD`: Player moves on 16x8 tile grid, terrain rendered as letters, player as sprite
-- `STATE_TILE_VIEW`: Zoomed view showing tile name, scaled sprite, action menu
-
-Player position tracked separately from map via `tg_playerX`, `tg_playerY`, and `tg_underPlayer` (stores tile type under player).
+The game uses a state machine (`GameState` in `game.h`): splash, menu, world,
+tile view, inventory, buildings, chests, save/load flows, dialog, and more.
+Player position is tracked separately from the map via `tg_playerX`,
+`tg_playerY`, and `tg_underPlayer` (stores the tile type under the player).
 
 ### Platform API
 
-```cpp
+```c
 // Input
 platform_button_pressed(BTN_A)   // Rising edge
 platform_button_held(BTN_UP)     // Currently down
@@ -119,7 +63,14 @@ platform_print("text")
 platform_draw_tile(tileX, tileY, spriteData)
 platform_render()
 
-// Sound
+// Sound (no-op in the terminal implementation)
 platform_beep(freq, duration_ms)
 platform_play_melody(notes, durations, len)
 ```
+
+### Terminal Input Caveat
+
+Terminals never report key-up events, so a button counts as "held" for 150ms
+after its most recent key event (`KEY_HOLD_MS` in `platform_terminal.c`); OS
+key repeat keeps it held. Edge detection (`platform_button_pressed`) works
+normally on top of this.

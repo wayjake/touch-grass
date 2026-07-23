@@ -1,7 +1,7 @@
 # Touch Grass - Game Design Document
 
 ## Overview
-Touch Grass is a tile-based survival exploration game for ESP32 with OLED display. Players explore a procedurally generated world, gather resources, and try to survive.
+Touch Grass is a tile-based survival exploration game rendered on a 128x64 monochrome display. Players explore a procedurally generated world, gather resources, and try to survive.
 
 ## Controls
 
