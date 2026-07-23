@@ -18,6 +18,13 @@
 #include <emscripten.h>
 #endif
 
+// Native (Mac/Linux) platform uses POSIX stdio, saves in ~/.touchgrass/saves
+#ifdef PLATFORM_NATIVE
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#endif
+
 #define SAVE_SLOT_COUNT 6
 #define SAVE_NAME_MAX 12
 #define SAVE_VERSION 1
@@ -90,6 +97,29 @@ const char* getSlotFilename(uint8_t slot, char* buffer) {
     return buffer;
 }
 
+#ifdef PLATFORM_NATIVE
+// Build absolute path under ~/.touchgrass (falls back to cwd if HOME unset)
+static const char* nativeSaveDir(char* buffer, size_t size) {
+    const char* home = getenv("HOME");
+    snprintf(buffer, size, "%s/.touchgrass", home ? home : ".");
+    return buffer;
+}
+
+static const char* nativeSlotPath(uint8_t slot, char* buffer, size_t size) {
+    char dir[256];
+    nativeSaveDir(dir, sizeof(dir));
+    snprintf(buffer, size, "%s/saves/slot%d.sav", dir, slot);
+    return buffer;
+}
+
+static const char* nativeLastIdxPath(char* buffer, size_t size) {
+    char dir[256];
+    nativeSaveDir(dir, sizeof(dir));
+    snprintf(buffer, size, "%s/saves/last.idx", dir);
+    return buffer;
+}
+#endif
+
 // Initialize save system (call in setup())
 bool initSaveSystem() {
 #ifdef ARDUINO
@@ -121,6 +151,25 @@ bool initSaveSystem() {
     });
     if (mostRecentSlot >= SAVE_SLOT_COUNT) {
         mostRecentSlot = -1;
+    }
+#elif defined(PLATFORM_NATIVE)
+    // Create ~/.touchgrass/saves if needed
+    char dir[256];
+    nativeSaveDir(dir, sizeof(dir));
+    mkdir(dir, 0755);
+
+    char savesDir[280];
+    snprintf(savesDir, sizeof(savesDir), "%s/saves", dir);
+    mkdir(savesDir, 0755);
+
+    // Load most recent slot index
+    char idxPath[300];
+    nativeLastIdxPath(idxPath, sizeof(idxPath));
+    FILE* f = fopen(idxPath, "rb");
+    if (f) {
+        int c = fgetc(f);
+        fclose(f);
+        mostRecentSlot = (c >= 0 && c < SAVE_SLOT_COUNT) ? (int8_t)c : -1;
     }
 #endif
     return true;
@@ -194,6 +243,21 @@ bool readSaveHeader(uint8_t slot, SaveHeader* header) {
     }, slot);
 
     return true;
+#elif defined(PLATFORM_NATIVE)
+    char path[300];
+    nativeSlotPath(slot, path, sizeof(path));
+
+    FILE* file = fopen(path, "rb");
+    if (!file) {
+        header->valid = 0x00;
+        header->name[0] = '\0';
+        return true;
+    }
+
+    size_t bytesRead = fread(header, 1, sizeof(SaveHeader), file);
+    fclose(file);
+
+    return bytesRead == sizeof(SaveHeader);
 #else
     header->valid = 0x00;
     header->name[0] = '\0';
@@ -247,6 +311,14 @@ bool setMostRecentSave(uint8_t slot) {
     EM_ASM({
         localStorage.setItem("touchgrass_last_slot", $0.toString());
     }, slot);
+#elif defined(PLATFORM_NATIVE)
+    char idxPath[300];
+    nativeLastIdxPath(idxPath, sizeof(idxPath));
+    FILE* f = fopen(idxPath, "wb");
+    if (!f) return false;
+
+    fputc(slot, f);
+    fclose(f);
 #endif
     mostRecentSlot = slot;
     return true;
@@ -399,6 +471,17 @@ bool saveGame(uint8_t slot, const char* name, bool inBuilding) {
         var key = "touchgrass_slot_" + slotNum;
         localStorage.setItem(key, jsonStr);
     }, slot, name, save.header.timestamp, &save.data, sizeof(SaveData));
+#elif defined(PLATFORM_NATIVE)
+    char path[300];
+    nativeSlotPath(slot, path, sizeof(path));
+
+    FILE* file = fopen(path, "wb");
+    if (!file) return false;
+
+    size_t written = fwrite(&save, 1, sizeof(SaveSlot), file);
+    fclose(file);
+
+    if (written != sizeof(SaveSlot)) return false;
 #endif
 
     // Update cached header
@@ -483,6 +566,28 @@ int8_t loadGame(uint8_t slot) {
     setMostRecentSave(slot);
 
     return wasInBuilding;
+#elif defined(PLATFORM_NATIVE)
+    char path[300];
+    nativeSlotPath(slot, path, sizeof(path));
+
+    FILE* file = fopen(path, "rb");
+    if (!file) return -1;
+
+    SaveSlot save;
+    size_t bytesRead = fread(&save, 1, sizeof(SaveSlot), file);
+    fclose(file);
+
+    if (bytesRead != sizeof(SaveSlot)) return -1;
+    if (save.header.valid != 0x01) return -1;
+    if (save.header.version != SAVE_VERSION) return -1;
+
+    // Unpack into game state
+    unpackGameState(&save.data);
+
+    // Update most recent
+    setMostRecentSave(slot);
+
+    return save.data.wasInBuilding;
 #else
     return -1;  // Save not supported
 #endif
@@ -504,6 +609,10 @@ bool deleteSave(uint8_t slot) {
         var key = "touchgrass_slot_" + $0;
         localStorage.removeItem(key);
     }, slot);
+#elif defined(PLATFORM_NATIVE)
+    char path[300];
+    nativeSlotPath(slot, path, sizeof(path));
+    remove(path);
 #endif
 
     // Clear cached header
@@ -519,6 +628,10 @@ bool deleteSave(uint8_t slot) {
         EM_ASM({
             localStorage.removeItem("touchgrass_last_slot");
         });
+#elif defined(PLATFORM_NATIVE)
+        char idxPath[300];
+        nativeLastIdxPath(idxPath, sizeof(idxPath));
+        remove(idxPath);
 #endif
     }
 

@@ -23,6 +23,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 wokwi-cli .
 ```
 
+## Native Build (Mac/Linux)
+
+The game can run as a native terminal executable with no dependencies beyond a C/C++ compiler:
+
+```bash
+# Build (outputs native/touch-grass)
+cd native && ./build.sh
+
+# Run in a terminal at least 128x33 characters
+./native/touch-grass
+```
+
+**Controls:** Arrow keys or WASD (move), Z/Space/Enter (A button), X/Esc (B button), Q (quit)
+
+### Native Architecture
+
+- `native/platform_native.c` - POSIX terminal platform implementation (ANSI half-block rendering of the 128x64 framebuffer, termios raw-mode input, monotonic clock timing; sound is a no-op)
+- `native/game_native.cpp` - Entry point with ~30 FPS fixed-timestep loop
+- `native/Arduino.h` - Arduino API shim for the shared game headers
+- Saves are written to `~/.touchgrass/saves/` (the `PLATFORM_NATIVE` branch in `touch_grass/save.h`)
+- Terminal key input has no key-up events, so a button counts as "held" for 150ms after its last key event (key repeat keeps it held)
+
 ## Web Emulation
 
 The game can run in a browser using WebAssembly:
